@@ -2,16 +2,76 @@ import React, { useEffect, useState } from 'react'
 import { LessonPage, Section, Callout, Exercise, useLessonComplete } from '../../../components/ui.jsx'
 import MdEditor from '../../../components/MdEditor.jsx'
 import { aiPolish, simulateStream } from '../../../lib/ai.js'
+import { copyText } from '../../../lib/utils.js'
 
 /* ============================================================
    5 个高频场景模板（骨架）
    ============================================================ */
 const SCENES = [
   {
+    key: 'gongwen',
+    icon: '📢',
+    name: '公文通知',
+    fields: ['标题', '发文字号', '主送', '正文', '落款'],
+    why: '公文讲究「抬头—正文—落款」三段式：front matter 放发文字号/主送机关，结尾右对齐放落款日期。可直接用配套工具转成公文 docx。',
+    md: `---
+title: 关于举办 XXX 的通知
+发文字号: XX办发〔2025〕X号
+主送机关: 各科室、直属单位：
+落款: XX办公室
+成文日期: 2025年X月X日
+---
+为……，现定于……，有关事项通知如下。
+
+## 一、总体安排
+
+| 时间 | 内容 | 负责人 |
+| ---- | ---- | ------ |
+| 09:00 | …… | …… |
+
+## 二、注意事项
+
+1. ……
+2. ……
+
+特此通知。`,
+  },
+  {
+    key: 'report',
+    icon: '📊',
+    name: '数据分析报告',
+    fields: ['数据来源', '统计', '结论', '建议'],
+    why: '分析报告遵循「数据先行、结论殿后」：先摆表格和统计，再用「结论—依据—建议」结构收尾，让读者先看到结果再看到过程。',
+    md: `# XX 数据分析报告
+
+## 一、数据来源与口径
+
+- 数据范围：……
+- 统计口径：……
+
+## 二、核心数据
+
+| 指标 | 数值 | 环比 |
+| ---- | ---- | ---- |
+| 总量 | …… | …… |
+| 均值 | …… | …… |
+
+## 三、主要结论
+
+1. **结论一**：……（依据：表格第 X 行数据）
+2. **结论二**：……
+
+## 四、建议
+
+- [ ] 建议一：……
+- [ ] 建议二：……`,
+  },
+  {
     key: 'blog',
     icon: '📝',
     name: '博客文章',
     fields: ['标题', '摘要', '正文', '标签'],
+    why: '博客用「摘要先行 + 小标题分段」降低阅读门槛：引言给读者「读不读」的判断，小标题帮读者快速扫读。',
     md: `# 我的博客标题
 
 > 一句话摘要：这篇文章想讲什么？
@@ -36,6 +96,7 @@ const SCENES = [
     icon: '📋',
     name: '会议纪要',
     fields: ['时间', '参与人', '议题', '决议'],
+    why: '会议纪要的核心是「决议可追踪」：每个议题固定「讨论要点 → 决议」，最后统一收进带勾选框的待办列表，方便会后跟进。',
     md: `# 会议纪要
 
 ## 会议信息
@@ -63,6 +124,7 @@ const SCENES = [
     icon: '📖',
     name: '项目文档 README',
     fields: ['简介', '安装', '使用', 'API'],
+    why: 'README 按「用户视角」排序：先讲清楚项目是什么、怎么装、怎么用，最后才列 API——安装命令放代码块里可直接复制。',
     md: `# 项目名
 
 > 一句话介绍项目是干什么的。
@@ -96,6 +158,7 @@ npm install 你的项目
     icon: '📊',
     name: '周报',
     fields: ['本周工作', '下周计划', '问题'],
+    why: '周报按「已完成 / 待办 / 求助」三类归档：✅ 给结果、[ ] 给承诺、表格列问题，领导一眼扫完不费劲。',
     md: `# 周报（第__周）
 
 ## 本周工作
@@ -119,6 +182,7 @@ npm install 你的项目
     icon: '📚',
     name: '学习笔记',
     fields: ['知识点', '示例', '思考'],
+    why: '笔记用「定义 → 示例 → 易错点 → 思考」四段式：示例用代码块、易错点用引用块，把「记住了」升级为「想清楚了」。',
     md: `# 学习笔记：___
 
 ## 核心知识点
@@ -239,18 +303,19 @@ export default function Templates() {
     <LessonPage
       id="templates"
       module="m5"
-      moduleName="模块五 · 实战工作流"
-      time="50min"
+      moduleName="模块五 · AI 辅助与数据分析"
+      time="40min"
       icon="📝"
       title="场景模板库"
-      subtitle="别从零开始！5 个高频写作场景，一键生成 Markdown 骨架，你只需要填内容。"
-      goals={['认识 5 个常见写作场景的模板结构', '会用骨架快速开始写作', '体验 AI 自动检查并修复格式']}
+      subtitle="别从零开始！7 个高频写作场景，一键生成 Markdown 骨架，你只需要填内容——每个模板都附「为什么这样搭」的讲解。"
+      goals={['认识 7 个常见写作场景的模板结构', '会用骨架快速开始写作', '理解模板背后的结构设计思路', '体验 AI 自动检查并修复格式']}
     >
-      <Section num={1} title="5 个高频场景模板">
+      <Section num={1} title="7 个高频场景模板">
         <p style={{ fontSize: 14, color: 'var(--text-soft)', margin: '0 0 12px' }}>
-          点一个卡片，对应的 Markdown 骨架就会填进下方编辑器。骨架已经把<b>结构</b>搭好了，你只需要把「…」换成自己的内容。
+          点一个卡片，对应的 Markdown 骨架就会填进下方编辑器。每个卡片都标注了<b>结构设计思路</b>——
+          模板不只是「抄个格式」，而是帮你理解「为什么这样搭」。
         </p>
-        <div className="grid-3">
+        <div className="grid-2">
           {SCENES.map((s) => (
             <div
               key={s.key}
@@ -265,14 +330,30 @@ export default function Templates() {
               }}
               onClick={() => pick(s.key)}
             >
-              <div style={{ fontSize: 24 }}>{s.icon}</div>
-              <b style={{ display: 'block', margin: '6px 0 4px' }}>{s.name}</b>
-              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 24 }}>{s.icon}</span>
+                <b style={{ flex: 1 }}>{s.name}</b>
+                <button
+                  className="btn btn-sm btn-ghost"
+                  style={{ padding: '2px 10px', fontSize: 12 }}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    copyText(s.md)
+                  }}
+                  title="复制整个模板骨架"
+                >
+                  📋 复制
+                </button>
+              </div>
+              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', margin: '8px 0 6px' }}>
                 {s.fields.map((f) => (
                   <span key={f} className="chip" style={{ fontSize: 11 }}>
                     {f}
                   </span>
                 ))}
+              </div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-soft)', lineHeight: 1.7, minHeight: 34 }}>
+                💡 {s.why}
               </div>
               <div style={{ marginTop: 8, fontSize: 12.5, color: 'var(--accent)', fontWeight: 700 }}>
                 {sel?.key === s.key ? '✅ 已选择，骨架已填入编辑器' : '点击生成骨架 →'}
@@ -356,7 +437,8 @@ export default function Templates() {
           <TemplateExercise onPass={markDone} />
           {done && (
             <Callout type="tip">
-              <b>🎉 恭喜出师！</b>你已经会从模板快速开始写作了。下一课「发布流程模拟」，我们把文档发布到网上。
+              <b>🎉 恭喜出师！</b>你已经会从模板快速开始写作了。至此「AI 辅助与数据分析」模块全部完成——
+              下一课进入<b>模块六「结业测试」</b>，检验一下你的全部所学！
             </Callout>
           )}
         </Exercise>

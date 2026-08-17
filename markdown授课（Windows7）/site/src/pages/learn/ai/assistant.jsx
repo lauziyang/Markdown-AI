@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { LessonPage, Section, Callout, Exercise, useLessonComplete } from '../../../components/ui.jsx'
 import MdEditor from '../../../components/MdEditor.jsx'
-import { simulateStream, aiOutline, aiPolish, estimateHandwriteTime, estimateAIWriteTime } from '../../../lib/ai.js'
+import { simulateStream, aiOutline, aiPolish, aiContinue, estimateHandwriteTime, estimateAIWriteTime } from '../../../lib/ai.js'
 import { downloadDocx } from '../../../lib/docx.js'
 
 /* 在线转换器的预置示例：一份「公文风」Markdown */
@@ -81,6 +81,10 @@ export default function Assistant() {
   const [genStarted, setGenStarted] = useState(false)
   const [optPoints, setOptPoints] = useState([])
   const [polished, setPolished] = useState(false)
+  const [feedback, setFeedback] = useState('')
+  const [continueOut, setContinueOut] = useState('')
+  const [continuing, setContinuing] = useState(false)
+  const [turn, setTurn] = useState(0)
 
   /* 生成大纲：用 simulateStream 模拟 AI 逐字输出 */
   const runGenerate = async () => {
@@ -106,6 +110,18 @@ export default function Assistant() {
     setPolished(true)
   }
 
+  /* 多轮对话：基于用户的修改反馈，AI 继续优化 */
+  const runContinue = async () => {
+    if (!content.trim() || continuing) return
+    setContinuing(true)
+    setContinueOut('')
+    const result = aiContinue(content, feedback)
+    await simulateStream(result, (c) => setContinueOut(c), 14)
+    setContinuing(false)
+    setTurn((t) => t + 1)
+    setFeedback('')
+  }
+
   const hand = estimateHandwriteTime(content)
   const ai = estimateAIWriteTime(content)
   const savedPct = Math.round((1 - ai / hand) * 100)
@@ -120,13 +136,13 @@ export default function Assistant() {
   return (
     <LessonPage
       id="assistant"
-      module="m6"
-      moduleName="模块六 · AI 辅助"
-      time="20min"
+      module="m5"
+      moduleName="模块五 · AI 辅助与数据分析"
+      time="40min"
       icon="🤖"
       title="AI 辅助写作"
-      subtitle="让 AI 帮你写大纲、规范格式、润色表达——花 10 分钟体验「人机协作」的现代写作方式。"
-      goals={['了解 AI 能帮 Markdown 写作做什么', '用 AI 生成一份大纲，并在此基础上继续完善', '体验效率对比与一键格式优化']}
+      subtitle="让 AI 帮你写大纲、规范格式、润色表达，还能多轮对话迭代——花 10 分钟体验「人机协作」的现代写作方式。"
+      goals={['了解 AI 能帮 Markdown 写作做什么', '用 AI 生成一份大纲，并在此基础上继续完善', '体验多轮对话式的人机协作迭代', '体验效率对比与一键格式优化']}
     >
       <Section num={1} title="AI + Markdown：能帮你做什么？">
         <p style={{ fontSize: 14, color: 'var(--text-soft)', margin: '0 0 14px' }}>
@@ -220,13 +236,54 @@ export default function Assistant() {
           {done && (
             <Callout type="tip">
               <b>🎉 通关成功！</b>你已经体验了「AI 生成骨架 + 人工完善内容」的写作流程。
-              下一课「格式转换」已解锁，去把各种格式都转成 Markdown 吧。
+              下一课「表格数据分析」已解锁——让 AI 帮你读表格、找异常。
             </Callout>
           )}
         </Exercise>
       </Section>
 
-      <Section num={3} title="效率对比：纯手写 vs AI 辅助">
+      <Section num={3} title="多轮对话：像聊天一样迭代文档">
+        <Callout type="info" title="这才是真实世界的用法">
+          上一节是「一次性生成」。真实的 AI 协作是<b>对话式迭代</b>：你改一版 → AI 基于你的修改继续优化 →
+          你再改 → AI 再优化。下面的演示让你体验这个过程。
+        </Callout>
+        <div className="card" style={{ padding: '16px 18px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
+            <b>💬 给 AI 提要求（基于上方编辑器里的当前内容）</b>
+            {turn > 0 && <span className="chip chip-accent">已迭代 {turn} 轮</span>}
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+            {['更正式一点（公文风）', '精简一点，突出重点', '加一个对比表格', '补充示例'].map((t) => (
+              <button key={t} className="chip" style={{ cursor: 'pointer' }} onClick={() => setFeedback(t)}>
+                {t}
+              </button>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <input
+              className="ex-input"
+              style={{ flex: 1, minWidth: 220 }}
+              placeholder="输入你对文档的要求，例如：帮我改成正式的汇报风格…"
+              value={feedback}
+              onChange={(e) => setFeedback(e.target.value)}
+            />
+            <button className="btn btn-primary" onClick={runContinue} disabled={continuing || !content.trim()}>
+              {continuing ? '⏳ AI 思考中…' : '🤖 让 AI 继续优化'}
+            </button>
+          </div>
+          {continueOut && (
+            <div className="demo-frame" style={{ marginTop: 12 }}>
+              <div style={{ fontWeight: 800, marginBottom: 6 }}>🤖 AI 第 {turn} 轮回复</div>
+              <div style={{ fontSize: 13.5, lineHeight: 1.8, whiteSpace: 'pre-wrap' }}>{continueOut}</div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-faint)', marginTop: 8 }}>
+                💡 真实对话中你可以追问「为什么这样改」「再具体一点」——上下文越充分，AI 输出越贴合你的意图。
+              </div>
+            </div>
+          )}
+        </div>
+      </Section>
+
+      <Section num={4} title="效率对比：纯手写 vs AI 辅助">
         <div className="card" style={{ padding: '16px 18px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
             <b>⏱️ 同一份文档，两种写法的耗时估算</b>
@@ -245,7 +302,7 @@ export default function Assistant() {
         </div>
       </Section>
 
-      <Section num={4} title="AI 的实际应用（延伸阅读）">
+      <Section num={5} title="AI 的实际应用（延伸阅读）">
         <Callout type="tip" title="你正在用的这个网站">
           这个交互式网站本身就是 AI 生成的！配套的方案文档在项目根目录
           <code>Markdown精讲交互式网站 - 实施方案（4+1结构）.md</code>，
@@ -275,7 +332,7 @@ export default function Assistant() {
         </div>
       </Section>
 
-      <Section num={5} title="在线体验：Markdown → 公文 docx">
+      <Section num={6} title="在线体验：Markdown → 公文 docx">
         <div className="card" style={{ padding: '16px 18px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
             <b>✍️ 粘贴 Markdown，一键生成公文 Word 文档</b>

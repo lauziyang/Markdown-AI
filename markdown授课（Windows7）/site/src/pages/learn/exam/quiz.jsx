@@ -152,13 +152,13 @@ export default function QuizPage() {
   return (
     <LessonPage
       id="quiz"
-      module="m3"
-      moduleName="模块三 · 进阶语法精讲"
+      module="m6"
+      moduleName="模块六 · 结业测试"
       time="60min"
       icon="📝"
       title="进阶语法小测验"
-      subtitle="表格、代码块、任务列表、转义……这一课把模块三的知识点做成 20 道选择题，60 分以上就能通关。"
-      goals={['回顾模块三的全部进阶语法', '答对 20 道易错点选择题', '以 60 分以上通关并获得徽章']}
+      subtitle="表格、代码块、任务列表、转义……把前面学过的进阶语法做成 20 道选择题，60 分以上就能通关。"
+      goals={['回顾前面学过的全部进阶语法', '答对 20 道易错点选择题', '以 60 分以上通关，向结业认证迈进']}
     >
       <Section num={1} title="热身：三句话回顾">
         <div className="grid-3">
@@ -182,8 +182,8 @@ export default function QuizPage() {
       <Section num={3} title="下一步">
         {done ? (
           <Callout type="tip" title="恭喜通关">
-            <b>你已完成模块三的全部课程！</b>「<b>进阶语法大师</b>」徽章已点亮 🏅，
-            下一课《Mermaid 图表工坊》已经解锁——用代码画流程图，进入模块四「高级应用」。
+            <b>进阶语法测验通过！</b>接下来是结业测试第二关——「综合挑战」，
+            把标题、表格、流程图、代码块、公式组合成一份完整的技术方案。
           </Callout>
         ) : (
           <p style={{ color: 'var(--text-faint)' }}>答完 20 道题并拿到 60 分以上，这里会出现通关彩蛋 🎉</p>

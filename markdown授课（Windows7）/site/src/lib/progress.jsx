@@ -3,15 +3,24 @@ import { todayStr } from './utils.js'
 
 /* ============================================================
    课程注册表：所有课程序列（用于解锁与进度统计）
+   ============================================================
+
+   结构（v2）：
+   模块一 · 初识与样式    intro / setup / style
+   模块二 · 核心语法精讲  core-hub / headings / emphasis / lists / links / playground
+   模块三 · 进阶语法精讲  tables / code / tasks / escape
+   模块四 · 高级应用      mermaid / latex / html / toc
+   模块五 · AI 辅助与数据分析  assistant / data-analyze / doc-analyze / templates
+   模块六 · 结业测试      quiz / challenge / ai-exam
    ============================================================ */
 
 export const MODULES = [
   {
     id: 'm1',
     icon: '📘',
-    name: '模块一 · 初识 Markdown',
-    time: '50min',
-    desc: '是什么、为什么用、环境准备',
+    name: '模块一 · 初识与样式',
+    time: '40min',
+    desc: '是什么、为什么用、样式定制',
     path: '/learn/intro',
   },
   {
@@ -26,7 +35,7 @@ export const MODULES = [
     id: 'm3',
     icon: '📙',
     name: '模块三 · 进阶语法精讲',
-    time: '60min',
+    time: '45min',
     desc: '表格、代码块、引用、任务列表、转义',
     path: '/learn/advanced/tables',
   },
@@ -40,19 +49,19 @@ export const MODULES = [
   },
   {
     id: 'm5',
-    icon: '📒',
-    name: '模块五 · 实战工作流',
-    time: '50min',
-    desc: '文档写作、博客发布、协作规范',
-    path: '/learn/workflow/templates',
+    icon: '🤖',
+    name: '模块五 · AI 辅助与数据分析',
+    time: '40min',
+    desc: 'AI 写作、表格分析、文档体检、场景模板',
+    path: '/learn/ai/assistant',
   },
   {
     id: 'm6',
-    icon: '🤖',
-    name: '模块六 · AI 辅助',
-    time: '20min',
-    desc: '用 AI 生成 / 优化 / 转换 Markdown',
-    path: '/learn/ai/assistant',
+    icon: '🎓',
+    name: '模块六 · 结业测试',
+    time: '60min',
+    desc: '进阶测验、综合挑战、AI 知识测验',
+    path: '/learn/exam/quiz',
   },
 ]
 
@@ -60,7 +69,7 @@ export const MODULES = [
 export const LESSON_SEQUENCE = [
   { id: 'intro', path: '/learn/intro', title: 'Markdown 是什么', module: 'm1' },
   { id: 'setup', path: '/learn/setup', title: '环境搭建', module: 'm1' },
-  { id: 'first', path: '/learn/first', title: '第一个文档', module: 'm1' },
+  { id: 'style', path: '/learn/core/style', title: '样式自定义', module: 'm1' },
   { id: 'core-hub', path: '/learn/core', title: '语法卡片矩阵', module: 'm2', hub: true },
   { id: 'headings', path: '/learn/core/headings', title: '标题', module: 'm2' },
   { id: 'emphasis', path: '/learn/core/emphasis', title: '强调（加粗/斜体/删除线）', module: 'm2' },
@@ -71,19 +80,17 @@ export const LESSON_SEQUENCE = [
   { id: 'code', path: '/learn/advanced/code', title: '代码块高亮实验室', module: 'm3' },
   { id: 'tasks', path: '/learn/advanced/tasks', title: '任务列表', module: 'm3' },
   { id: 'escape', path: '/learn/advanced/escape', title: '转义字符游戏', module: 'm3' },
-  { id: 'quiz', path: '/learn/advanced/quiz', title: '进阶小测验', module: 'm3' },
   { id: 'mermaid', path: '/learn/advanced/mermaid', title: 'Mermaid 图表工坊', module: 'm4' },
   { id: 'latex', path: '/learn/advanced/latex', title: 'LaTeX 公式编辑', module: 'm4' },
   { id: 'html', path: '/learn/advanced/html', title: 'HTML 混写', module: 'm4' },
   { id: 'toc', path: '/learn/advanced/toc', title: '自动生成目录', module: 'm4' },
-  { id: 'challenge', path: '/learn/advanced/challenge', title: '综合挑战', module: 'm4' },
-  { id: 'templates', path: '/learn/workflow/templates', title: '场景模板库', module: 'm5' },
-  { id: 'publish', path: '/learn/workflow/publish', title: '发布流程模拟', module: 'm5' },
-  { id: 'git', path: '/learn/workflow/git', title: 'Git + Markdown 工作流', module: 'm5' },
-  { id: 'style', path: '/learn/workflow/style', title: '样式自定义', module: 'm5' },
-  { id: 'assistant', path: '/learn/ai/assistant', title: 'AI 辅助写作', module: 'm6' },
-  { id: 'converter', path: '/learn/ai/converter', title: '格式转换', module: 'm6' },
-  { id: 'prompts', path: '/learn/ai/prompts', title: '提示词速查', module: 'm6' },
+  { id: 'assistant', path: '/learn/ai/assistant', title: 'AI 辅助写作', module: 'm5' },
+  { id: 'data-analyze', path: '/learn/ai/data-analyze', title: '表格数据分析', module: 'm5' },
+  { id: 'doc-analyze', path: '/learn/ai/doc-analyze', title: '文档智能分析', module: 'm5' },
+  { id: 'templates', path: '/learn/ai/templates', title: '场景模板库', module: 'm5' },
+  { id: 'quiz', path: '/learn/exam/quiz', title: '进阶小测验', module: 'm6' },
+  { id: 'challenge', path: '/learn/exam/challenge', title: '综合挑战', module: 'm6' },
+  { id: 'ai-exam', path: '/learn/exam/ai-exam', title: 'AI 知识测验', module: 'm6' },
 ]
 
 export const BADGES = [
@@ -91,8 +98,8 @@ export const BADGES = [
   { id: 'syntax-master', icon: '⚡', name: '语法大师', desc: '完成模块二', module: 'm2' },
   { id: 'table-expert', icon: '📊', name: '表格专家', desc: '完成模块三', module: 'm3' },
   { id: 'diagram-pro', icon: '📈', name: '图表达人', desc: '完成模块四', module: 'm4' },
-  { id: 'doc-craftsman', icon: '🛠️', name: '文档工匠', desc: '完成模块五', module: 'm5' },
-  { id: 'ai-helper', icon: '🤖', name: 'AI 搭档', desc: '完成模块六', module: 'm6' },
+  { id: 'ai-helper', icon: '🤖', name: 'AI 搭档', desc: '完成模块五', module: 'm5' },
+  { id: 'graduate', icon: '🎓', name: '结业认证', desc: '完成模块六', module: 'm6' },
 ]
 
 const STORAGE_KEY = 'mdlearn-progress-v1'

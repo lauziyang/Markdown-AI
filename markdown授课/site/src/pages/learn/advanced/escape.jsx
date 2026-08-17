@@ -166,7 +166,7 @@ export default function Escape() {
           <EscapeGame onPass={markDone} />
           {done && (
             <Callout type="tip" title="通关">
-              <b>厉害！</b>你已经掌握了反斜杠转义。下一课《进阶语法小测验》已经解锁，去检验一下整个模块三的成果吧～
+              <b>厉害！</b>你已经掌握了反斜杠转义。下一课《Mermaid 图表工坊》已经解锁——用代码画流程图，进入模块四「高级应用」。
             </Callout>
           )}
         </Exercise>
@@ -175,7 +175,7 @@ export default function Escape() {
       <Section num={3} title="下一步">
         {done ? (
           <Callout type="tip" title="获得徽章">
-            你已完成「转义字符游戏」，模块三进度 +1！完成最后的小测验，就能点亮「<b>进阶语法大师</b>」徽章。
+            你已完成「转义字符游戏」，模块三进度 +1！下一课进入模块四「高级应用」，去点亮「<b>图表达人</b>」徽章。
           </Callout>
         ) : (
           <p style={{ color: 'var(--text-faint)' }}>完成上面的练习后，这里会出现通关彩蛋 🎉</p>

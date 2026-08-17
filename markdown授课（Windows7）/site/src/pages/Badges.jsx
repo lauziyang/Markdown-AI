@@ -39,6 +39,6 @@ export default function Badges() {
 }
 
 function lessonOf(mid) {
-  const map = { m1: 'intro', m2: 'headings', m3: 'tables', m4: 'mermaid', m5: 'templates', m6: 'assistant' }
+  const map = { m1: 'intro', m2: 'headings', m3: 'tables', m4: 'mermaid', m5: 'assistant', m6: 'quiz' }
   return map[mid]
 }

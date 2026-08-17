@@ -11,7 +11,7 @@ const BadgesPage = lazy(() => import('./pages/Badges.jsx'))
 // 模块一
 const Intro = lazy(() => import('./pages/learn/intro.jsx'))
 const Setup = lazy(() => import('./pages/learn/setup.jsx'))
-const First = lazy(() => import('./pages/learn/first.jsx'))
+const StylePage = lazy(() => import('./pages/learn/core/style.jsx'))
 
 // 模块二
 const CoreHub = lazy(() => import('./pages/learn/core/CoreHub.jsx'))
@@ -26,8 +26,6 @@ const Tables = lazy(() => import('./pages/learn/advanced/tables.jsx'))
 const CodeLab = lazy(() => import('./pages/learn/advanced/code.jsx'))
 const Tasks = lazy(() => import('./pages/learn/advanced/tasks.jsx'))
 const Escape = lazy(() => import('./pages/learn/advanced/escape.jsx'))
-const QuizPage = lazy(() => import('./pages/learn/advanced/quiz.jsx'))
-const Challenge = lazy(() => import('./pages/learn/advanced/challenge.jsx'))
 
 // 模块四
 const Mermaid = lazy(() => import('./pages/learn/advanced/mermaid.jsx'))
@@ -36,15 +34,15 @@ const HtmlMix = lazy(() => import('./pages/learn/advanced/html.jsx'))
 const Toc = lazy(() => import('./pages/learn/advanced/toc.jsx'))
 
 // 模块五
-const Templates = lazy(() => import('./pages/learn/workflow/templates.jsx'))
-const Publish = lazy(() => import('./pages/learn/workflow/publish.jsx'))
-const GitFlow = lazy(() => import('./pages/learn/workflow/git.jsx'))
-const StylePage = lazy(() => import('./pages/learn/workflow/style.jsx'))
-
-// 模块六
 const Assistant = lazy(() => import('./pages/learn/ai/assistant.jsx'))
-const Converter = lazy(() => import('./pages/learn/ai/converter.jsx'))
-const Prompts = lazy(() => import('./pages/learn/ai/prompts.jsx'))
+const DataAnalyze = lazy(() => import('./pages/learn/ai/data-analyze.jsx'))
+const DocAnalyze = lazy(() => import('./pages/learn/ai/doc-analyze.jsx'))
+const Templates = lazy(() => import('./pages/learn/ai/templates.jsx'))
+
+// 模块六（结业测试）
+const QuizPage = lazy(() => import('./pages/learn/exam/quiz.jsx'))
+const Challenge = lazy(() => import('./pages/learn/exam/challenge.jsx'))
+const AiExam = lazy(() => import('./pages/learn/exam/ai-exam.jsx'))
 
 /** 课程门禁：未解锁则显示锁屏 */
 function Gate({ id, children }) {
@@ -76,7 +74,7 @@ export default function App() {
 
         <Route path="/learn/intro" element={<Gate id="intro"><Intro /></Gate>} />
         <Route path="/learn/setup" element={<Gate id="setup"><Setup /></Gate>} />
-        <Route path="/learn/first" element={<Gate id="first"><First /></Gate>} />
+        <Route path="/learn/core/style" element={<Gate id="style"><StylePage /></Gate>} />
 
         <Route path="/learn/core" element={<Gate id="core-hub"><CoreHub /></Gate>} />
         <Route path="/learn/core/headings" element={<Gate id="headings"><Headings /></Gate>} />
@@ -89,22 +87,20 @@ export default function App() {
         <Route path="/learn/advanced/code" element={<Gate id="code"><CodeLab /></Gate>} />
         <Route path="/learn/advanced/tasks" element={<Gate id="tasks"><Tasks /></Gate>} />
         <Route path="/learn/advanced/escape" element={<Gate id="escape"><Escape /></Gate>} />
-        <Route path="/learn/advanced/quiz" element={<Gate id="quiz"><QuizPage /></Gate>} />
-        <Route path="/learn/advanced/challenge" element={<Gate id="challenge"><Challenge /></Gate>} />
 
         <Route path="/learn/advanced/mermaid" element={<Gate id="mermaid"><Mermaid /></Gate>} />
         <Route path="/learn/advanced/latex" element={<Gate id="latex"><Latex /></Gate>} />
         <Route path="/learn/advanced/html" element={<Gate id="html"><HtmlMix /></Gate>} />
         <Route path="/learn/advanced/toc" element={<Gate id="toc"><Toc /></Gate>} />
 
-        <Route path="/learn/workflow/templates" element={<Gate id="templates"><Templates /></Gate>} />
-        <Route path="/learn/workflow/publish" element={<Gate id="publish"><Publish /></Gate>} />
-        <Route path="/learn/workflow/git" element={<Gate id="git"><GitFlow /></Gate>} />
-        <Route path="/learn/workflow/style" element={<Gate id="style"><StylePage /></Gate>} />
-
         <Route path="/learn/ai/assistant" element={<Gate id="assistant"><Assistant /></Gate>} />
-        <Route path="/learn/ai/converter" element={<Gate id="converter"><Converter /></Gate>} />
-        <Route path="/learn/ai/prompts" element={<Gate id="prompts"><Prompts /></Gate>} />
+        <Route path="/learn/ai/data-analyze" element={<Gate id="data-analyze"><DataAnalyze /></Gate>} />
+        <Route path="/learn/ai/doc-analyze" element={<Gate id="doc-analyze"><DocAnalyze /></Gate>} />
+        <Route path="/learn/ai/templates" element={<Gate id="templates"><Templates /></Gate>} />
+
+        <Route path="/learn/exam/quiz" element={<Gate id="quiz"><QuizPage /></Gate>} />
+        <Route path="/learn/exam/challenge" element={<Gate id="challenge"><Challenge /></Gate>} />
+        <Route path="/learn/exam/ai-exam" element={<Gate id="ai-exam"><AiExam /></Gate>} />
 
         <Route path="*" element={<Home />} />
       </Routes>

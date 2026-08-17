@@ -145,9 +145,9 @@ export default function StylePage() {
   return (
     <LessonPage
       id="style"
-      module="m5"
-      moduleName="模块五 · 实战工作流"
-      time="50min"
+      module="m1"
+      moduleName="模块一 · 初识与样式"
+      time="40min"
       icon="🎨"
       title="样式自定义"
       subtitle="同样的 Markdown 内容，换一套样式就是另一种气质。动手调一调，导出带样式的 HTML。"
@@ -303,8 +303,8 @@ export default function StylePage() {
 
           {done && (
             <Callout type="tip">
-              <b>🎉 风格大师！</b>你已经会调 Markdown 的样式了。这也是本模块的最后一课 —— 整个「实战工作流」模块通关，
-              下一模块「AI 辅助」已解锁！
+              <b>🎉 风格大师！</b>你已经会调 Markdown 的样式了。这也完成了模块一「初识与样式」，
+              下一课「语法卡片矩阵」将进入模块二「核心语法精讲」！
             </Callout>
           )}
         </Exercise>

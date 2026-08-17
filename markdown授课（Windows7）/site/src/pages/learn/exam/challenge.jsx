@@ -84,13 +84,13 @@ export default function Challenge() {
   return (
     <LessonPage
       id="challenge"
-      module="m4"
-      moduleName="模块四 · 高级应用"
+      module="m6"
+      moduleName="模块六 · 结业测试"
       time="60min"
       icon="🏆"
       title="综合挑战：写一份技术方案"
-      subtitle="把本模块学的全部本事——标题、表格、流程图、代码块、公式——组合成一份像样的技术方案文档。"
-      goals={['独立完成一份结构完整的技术方案', '熟练组合多种 Markdown 语法', '通过 5 项自动检测，点亮本模块通关成就']}
+      subtitle="结业第二关！把学过的全部本事——标题、表格、流程图、代码块、公式——组合成一份像样的技术方案文档。"
+      goals={['独立完成一份结构完整的技术方案', '熟练组合多种 Markdown 语法', '通过 5 项自动检测，向结业认证冲刺']}
     >
       <Section num={1} title="任务说明与写作提示">
         <div className="grid-2">
@@ -152,17 +152,17 @@ export default function Challenge() {
             placeholder={'在这里写你的技术方案文档…\n\n提示：可以先用上方按钮插入骨架，再逐项填内容。'}
             hint={
               allPass
-                ? '🎉 太棒了！所有要求都满足了，恭喜通关模块四！'
+                ? '🎉 太棒了！所有要求都满足了，综合挑战通过！'
                 : '试着加入对比表格、mermaid 流程图、示例代码块和数学公式，让清单全部打勾。'
             }
           />
 
           {done && (
             <div style={{ marginTop: 12 }}>
-              <Callout type="tip" title="本模块通关">
-                <b>🎉 恭喜！模块四「高级应用」全部通关。</b>
-                你已经会画图、写公式、混写 HTML、生成目录，还能组合成一份完整的技术方案。
-                真正的「🛠️ 文档工匠」徽章会在<b>完成模块五《实战工作流》后点亮</b>——继续加油！
+              <Callout type="tip" title="结业挑战通过">
+                <b>🎉 恭喜！综合挑战完成。</b>
+                你已经会画图、写公式、混写 HTML、生成目录，还能组合成完整的技术方案。
+                最后一关是「AI 知识测验」——答完即可获得<b>「🎓 结业认证」</b>徽章！
               </Callout>
             </div>
           )}
