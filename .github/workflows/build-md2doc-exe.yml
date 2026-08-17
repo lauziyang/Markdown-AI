@@ -1,11 +1,11 @@
-name: build-md2doc-exe
+name: build-md2doc-releases
 
-# 自动在 Windows 环境用 PyInstaller 把改进版 md2doc.py 打包成 md2doc.exe
-# - 推送到 main 分支：构建并上传为 Actions 工件（Artifacts）
-# - 打 tag（如 v2.0.0）：构建并发布到 Releases 下载页
+# 自动构建「Markdown 转公文工具 v2.0」的多平台可执行文件并发布到 Releases
+# - 推送到 main 分支：构建并上传为 Actions 工件（Artifacts），不发布
+# - 打 tag（如 v2.0.1）：构建并生成带完整说明的 Releases 下载页
 #
 # 触发方式：
-#   git tag v2.0.0 && git push origin v2.0.0
+#   git tag v2.0.1 && git push origin v2.0.1
 
 on:
   push:
@@ -15,7 +15,24 @@ on:
 
 jobs:
   build:
-    runs-on: windows-latest
+    name: 构建 ${{ matrix.label }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: Windows x64
+            name: md2doc-windows
+            asset: md2doc-windows-x64.exe
+          - os: macos-13
+            label: macOS Intel (x64)
+            name: md2doc
+            asset: md2doc-macos-x64
+          - os: macos-14
+            label: macOS Apple Silicon (arm64)
+            name: md2doc
+            asset: md2doc-macos-arm64
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -26,19 +43,108 @@ jobs:
       - name: 安装 PyInstaller
         run: pip install pyinstaller
 
-      - name: 打包 md2doc.exe
-        working-directory: markdown授课（Windows7）/tools/md2doc
-        run: pyinstaller --onefile --windowed --clean --name md2doc md2doc.py
+      # 复制到 ASCII 路径，避免中文目录名在 Windows PowerShell 下的兼容问题
+      - name: 准备源码
+        shell: bash
+        run: cp "markdown授课（Windows7）/tools/md2doc/md2doc.py" md2doc.py
+
+      - name: 打包可执行文件
+        run: pyinstaller --onefile --windowed --clean --name ${{ matrix.name }} md2doc.py
+
+      - name: 重命名为统一资产名
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            mv "dist/${{ matrix.name }}.exe" "dist/${{ matrix.asset }}"
+          else
+            mv "dist/${{ matrix.name }}" "dist/${{ matrix.asset }}"
+          fi
+          ls -lh dist/
 
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
         with:
-          name: md2doc-windows-exe
-          path: markdown授课（Windows7）/tools/md2doc/dist/md2doc.exe
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+          if-no-files-found: error
 
-      - name: 发布到 Releases（仅打 tag 时）
-        if: startsWith(github.ref, 'refs/tags/')
+  release:
+    name: 发布 Releases
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: 汇总全部构建产物
+        uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+
+      - name: 生成 SHA256 校验和
+        run: |
+          cd assets
+          ls -lh
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: 发布到 GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          files: markdown授课（Windows7）/tools/md2doc/dist/md2doc.exe
-          generate_release_notes: true
+          files: |
+            assets/*.exe
+            assets/md2doc-macos-*
+            assets/SHA256SUMS.txt
+          body: |
+            ## 📦 Markdown 转公文工具 v${{ github.ref_name }}
+
+            开源改进版，**纯 Python 标准库实现，无需安装 Microsoft Word**，直接生成符合
+            《党政机关公文格式 GB/T 9704-2012》的 .docx 公文文档。
+
+            ### ⬇️ 下载
+
+            | 平台 | 文件 | 说明 |
+            | ---- | ---- | ---- |
+            | **Windows 7 / 10 / 11**（x64） | `md2doc-windows-x64.exe` | 双击运行图形界面；或命令行 `md2doc-windows-x64.exe 输入.md` |
+            | **macOS**（Apple Silicon） | `md2doc-macos-arm64` | 双击运行；或在终端 `chmod +x md2doc-macos-arm64` 后使用 |
+            | **macOS**（Intel） | `md2doc-macos-x64` | 同上 |
+
+            > 所有文件 SHA256 校验和见 `SHA256SUMS.txt`。
+
+            ### ✨ v2.0 相比老师原版的改进
+
+            - 🚫 不依赖 Microsoft Word：直接生成 .docx，跨平台（Windows / macOS / Linux）
+            - 📐 完整公文样式：标题小标宋二号、正文仿宋_GB2312 三号、行距 28.9pt、首行缩进 2 字符
+            - 🧩 支持 front matter：发文字号 / 主送机关 / 落款 / 成文日期
+            - 📊 支持表格（三线表）、多级列表、引用、代码块、图片、行内加粗/斜体/代码/链接
+            - 🖥️ 图形界面 + 命令行 + 批量转换（`--dir 文件夹`）三种用法
+            - 📖 开源可改：源码 `md2doc.py` 位于仓库 `tools/md2doc/`
+
+            ### 🚀 使用方法
+
+            **图形界面**：双击 exe / 二进制文件，选择 .md 文件 → 点击「开始转换」。
+
+            **命令行**：
+            ```bash
+            md2doc-windows-x64.exe 输入.md [输出.docx]   # 转换单个文件
+            md2doc-windows-x64.exe --dir 文件夹           # 批量转换目录下所有 .md
+            ```
+
+            **支持的 front matter 文件头**（写在文档最前面，用 `---` 包裹）：
+            ```markdown
+            ---
+            title: 关于举办培训的通知
+            发文字号: XX办发〔2025〕3号
+            主送机关: 各科室、直属单位：
+            落款: XX办公室
+            成文日期: 2025年7月18日
+            ---
+            正文内容……
+            ```
+
+            ### 🔗 相关链接
+
+            - 源码：仓库 `markdown授课（Windows7）/tools/md2doc/md2doc.py`
+            - 网页在线转换器：教学网站「模块六 · AI 辅助」页面（浏览器内零依赖转换）
+            - 构建配置：`.github/workflows/build-md2doc-exe.yml`
+          draft: false
+          prerelease: false
