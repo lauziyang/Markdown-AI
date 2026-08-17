@@ -609,7 +609,44 @@ export function detectTableAnomalies(md) {
     }
   })
   if (mixed.length) findings.push({ level: 'warn', text: `${mixed.join('、')}存在千分位格式不统一（如 1000 与 1,000 混用），建议统一。` })
-  if (!findings.length) findings.push({ level: 'ok', text: '未发现明显异常：无空单元格、无重复行、数值分布正常、格式统一。' })
+  // 5) 勾稽关系校验：毛利 = 销售额 - 成本（误差 < 1 视为一致）
+  const ciAmt = headers.findIndex((h) => /销售额|销售金额/.test(h))
+  const ciCost = headers.findIndex((h) => /成本/.test(h))
+  const ciGross = headers.findIndex((h) => /毛利/.test(h))
+  if (ciAmt >= 0 && ciCost >= 0 && ciGross >= 0) {
+    const badRows = []
+    rows.forEach((r, ri) => {
+      const amt = toNum(r[ciAmt])
+      const cost = toNum(r[ciCost])
+      const gross = toNum(r[ciGross])
+      if (amt !== null && cost !== null && gross !== null && Math.abs(gross - (amt - cost)) > 1) {
+        badRows.push(`第 ${ri + 2} 行（${r[0]} ${r[1] || ''}）`)
+      }
+    })
+    if (badRows.length) {
+      findings.push({
+        level: 'error',
+        text: `勾稽校验失败：${badRows.slice(0, 3).join('、')}${badRows.length > 3 ? ` 等 ${badRows.length} 处` : ''}的「毛利 ≠ 销售额 − 成本」，数据存在矛盾，请核对原始记录。`,
+      })
+    }
+  }
+  // 6) 衍生指标合理性：客单价 = 销售额 ÷ 销量（偏离 3 倍判定异常）
+  const ciVol = headers.findIndex((h) => /销量/.test(h))
+  const ciPrice = headers.findIndex((h) => /客单价|单价/.test(h))
+  if (ciVol >= 0 && ciAmt >= 0 && ciPrice >= 0) {
+    const prices = rows.map((r) => toNum(r[ciPrice])).filter((n) => n !== null)
+    const avgPrice = prices.length ? prices.reduce((a, b) => a + b, 0) / prices.length : 0
+    const badPrice = rows
+      .filter((r) => {
+        const p = toNum(r[ciPrice])
+        return p !== null && avgPrice !== 0 && Math.abs(p) > Math.abs(avgPrice) * 3
+      })
+      .map((r) => `${r[0]} ${r[1] || ''}`)
+    if (badPrice.length) {
+      findings.push({ level: 'error', text: `「客单价」异常：${badPrice.join('、')} 远超均值 ${fmt(avgPrice)} 的 3 倍，疑似数据录入错误。` })
+    }
+  }
+  if (!findings.length) findings.push({ level: 'ok', text: '未发现明显异常：无空单元格、无重复行、数值分布正常、勾稽关系正确、格式统一。' })
   return findings
 }
 

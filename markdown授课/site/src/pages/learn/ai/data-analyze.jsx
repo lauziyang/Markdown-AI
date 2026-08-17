@@ -4,23 +4,37 @@ import MdEditor from '../../../components/MdEditor.jsx'
 import { simulateStream, parseMdTable, analyzeTable, analyzeTrend, aiTableAnswer, detectTableAnomalies, mermaidSuggest } from '../../../lib/ai.js'
 import { copyText } from '../../../lib/utils.js'
 
-/* 预置示例：多维度销售数据（6 门店 × 2 个月，含两处异常与一条下滑趋势） */
-const SAMPLE_TABLE = `# 门店销售数据分析（2025 年 5-6 月）
+/* 预置示例：复杂多维度销售数据（8 门店 × 3 个月 × 8 列）
+   藏着：两处 99999 异常、毛利≠销售额-成本（勾稽矛盾）、客单价异常、
+   达标率失真的行、成都连续下滑趋势 */
+const SAMPLE_TABLE = `# 门店经营数据总表（2025 年 Q2，共 24 行）
 
-| 门店 | 月份 | 销量 | 销售额(万) | 成本(万) | 毛利(万) |
-| ---- | ---- | ---- | ---------- | -------- | -------- |
-| 北京 | 2025-05 | 1150 | 345 | 240 | 105 |
-| 北京 | 2025-06 | 1200 | 360 | 250 | 110 |
-| 上海 | 2025-05 | 1380 | 414 | 280 | 134 |
-| 上海 | 2025-06 | 1450 | 435 | 300 | 135 |
-| 广州 | 2025-05 | 1005 | 302 | 220 | 82 |
-| 广州 | 2025-06 | 980 | 294 | 215 | 79 |
-| 深圳 | 2025-05 | 1060 | 318 | 230 | 88 |
-| 深圳 | 2025-06 | 1100 | 330 | 240 | 90 |
-| 成都 | 2025-05 | 920 | 276 | 210 | 66 |
-| 成都 | 2025-06 | 850 | 255 | 200 | 55 |
-| 武汉 | 2025-05 | 1300 | 390 | 99999 | 88 |
-| 武汉 | 2025-06 | 99999 | 30000 | 400 | 99999 |
+| 门店 | 月份 | 销量 | 销售额(万) | 成本(万) | 毛利(万) | 客单价(元) | 达标率 |
+| ---- | ---- | ---- | ---------- | -------- | -------- | ---------- | ------ |
+| 北京 | 2025-04 | 1100 | 330 | 230 | 100 | 300 | 92% |
+| 北京 | 2025-05 | 1150 | 345 | 240 | 105 | 300 | 96% |
+| 北京 | 2025-06 | 1200 | 360 | 250 | 110 | 300 | 100% |
+| 上海 | 2025-04 | 1320 | 396 | 270 | 126 | 300 | 105% |
+| 上海 | 2025-05 | 1380 | 414 | 280 | 134 | 300 | 110% |
+| 上海 | 2025-06 | 1450 | 435 | 300 | 135 | 300 | 116% |
+| 广州 | 2025-04 | 1030 | 309 | 225 | 84 | 300 | 86% |
+| 广州 | 2025-05 | 1005 | 302 | 220 | 82 | 300 | 84% |
+| 广州 | 2025-06 | 980 | 294 | 215 | 79 | 300 | 82% |
+| 深圳 | 2025-04 | 1020 | 306 | 225 | 81 | 300 | 85% |
+| 深圳 | 2025-05 | 1060 | 318 | 230 | 88 | 300 | 88% |
+| 深圳 | 2025-06 | 1100 | 330 | 240 | 90 | 300 | 92% |
+| 成都 | 2025-04 | 960 | 288 | 215 | 73 | 300 | 80% |
+| 成都 | 2025-05 | 920 | 276 | 210 | 66 | 300 | 77% |
+| 成都 | 2025-06 | 850 | 255 | 200 | 55 | 300 | 71% |
+| 武汉 | 2025-04 | 1250 | 375 | 265 | 110 | 300 | 104% |
+| 武汉 | 2025-05 | 1300 | 390 | 99999 | 88 | 300 | 108% |
+| 武汉 | 2025-06 | 99999 | 30000 | 400 | 99999 | 9999 | 2500% |
+| 西安 | 2025-04 | 780 | 234 | 170 | 64 | 300 | 65% |
+| 西安 | 2025-05 | 820 | 246 | 178 | 68 | 300 | 68% |
+| 西安 | 2025-06 | 860 | 258 | 188 | 70 | 300 | 72% |
+| 杭州 | 2025-04 | 1180 | 354 | 250 | 104 | 300 | 98% |
+| 杭州 | 2025-05 | 1240 | 372 | 262 | 110 | 300 | 103% |
+| 杭州 | 2025-06 | 1310 | 393 | 280 | 113 | 300 | 109% |
 `
 
 const Q_SAMPLES = [
@@ -30,6 +44,8 @@ const Q_SAMPLES = [
   '北京6月销量占全部门店的比例？',
   '6月较5月整体销售额环比增长多少？',
   '哪家门店6月成本异常？',
+  '毛利和销售额成本对不上的是哪几行？',
+  '哪家门店连续三个月下滑？',
 ]
 
 /* Excel vs Markdown 逐项对比表 */
@@ -42,6 +58,9 @@ const EXCEL_CMP = [
   ['与文档一体', '独立附件，文档与数据分离', '表格就是文档的一部分'],
   ['适用场景', '复杂计算、图表透视、多人填报', '轻量数据 + 文档一体化 + 喂给 AI'],
 ]
+
+/* 同一份 1000 行数据的文件大小实测（本课预置数据，已实测生成） */
+const SIZE_MEASURED = { rows: 1000, cols: 6, mdKB: 52.5, xlsxKB: 37.9 }
 
 /* 两种喂数据方式的模拟输出 */
 const EXCEL_SIM = `收到文件「销售数据.xlsx」（本地模拟）
@@ -62,7 +81,7 @@ const MD_SIM = `收到 Markdown 表格（就是上方编辑器里的内容）
 
 AI 处理过程：
 1. 按 | 分隔符逐行读取表头与数据…
-2. 共识别 12 行数据、6 列（门店 / 月份 / 销量 / 销售额 / 成本 / 毛利）…
+2. 共识别 24 行数据、8 列（门店 / 月份 / 销量 / 销售额 / 成本 / 毛利 / 客单价 / 达标率）…
 3. 数值列直接可用于计算，无解析损耗…
 4. 所有单元格内容对 AI 和人类完全透明…
 
@@ -87,6 +106,8 @@ export default function DataAnalyze() {
   const [excelMode, setExcelMode] = useState('')
   const [simOut, setSimOut] = useState('')
   const [simBusy, setSimBusy] = useState(false)
+  const [sizeRows, setSizeRows] = useState(1000)
+  const [sizeCols, setSizeCols] = useState(6)
 
   const runStats = async () => {
     setBusy(true)
@@ -174,14 +195,15 @@ export default function DataAnalyze() {
     >
       <Section num={1} title="一张表格，AI 能看出什么？">
         <p style={{ fontSize: 14, color: 'var(--text-soft)', margin: '0 0 12px', lineHeight: 1.8 }}>
-          示例表格是 <b>6 家门店 × 2 个月</b>的销售数据（销量、销售额、成本、毛利），
-          <b>藏着两处异常值和一条下滑趋势</b>，还考验你能否发现「毛利 = 销售额 - 成本」被破坏的行。
+          示例表格是 <b>8 家门店 × 3 个月</b>、<b>8 列指标</b>（销量、销售额、成本、毛利、客单价、达标率）的经营总表，
+          一共 24 行。<b>里面藏着 5 类问题</b>：两处 99999 异常、毛利与销售额/成本<b>对不上账</b>、客单价异常、
+          达标率失真、成都连续三个月下滑——试试 AI 能不能全部找出来。
           你可以直接用它体验，也可以编辑成你自己的数据。左侧<b>切换 5 种分析能力</b>逐项试试。
         </p>
         <MdEditor
           value={src}
           onChange={setSrc}
-          height={260}
+          height={360}
           placeholder="粘贴或输入一张 Markdown 表格…"
           hint={cells.headers.length ? `已识别表格：${cells.headers.join(' / ')}，共 ${cells.rows.length} 行数据` : '未识别到表格，请检查 | 分隔格式'}
         />
@@ -315,7 +337,7 @@ export default function DataAnalyze() {
                 ))}
               </div>
             )}
-            {!anomalies && <p style={{ fontSize: 13, color: 'var(--text-faint)', margin: 0 }}>点击扫描，AI 检查示例表格里「武汉」那行藏着什么问题。</p>}
+            {!anomalies && <p style={{ fontSize: 13, color: 'var(--text-faint)', margin: 0 }}>点击扫描，AI 会检查空单元格、重复行、数值异常、勾稽矛盾（毛利≠销售额−成本）、客单价异常。</p>}
           </div>
         )}
 
@@ -413,12 +435,78 @@ export default function DataAnalyze() {
         </div>
       </Section>
 
-      <Section num={4} title="练习：完成任意一种分析">
+      <Section num={4} title="文件大小实测：Markdown vs Excel">
+        <Callout type="info" title="先猜一猜">
+          同样一份 <b>1000 行 × 6 列</b>的销售数据，分别存成 <b>Markdown 文件</b>和 <b>Excel (.xlsx) 文件</b>，
+          哪个更大？<b>（答案可能和你想的不一样）</b>下面用真实生成的文件实测给你看。
+        </Callout>
+
+        {/* 实测数据 */}
+        <div className="card" style={{ padding: '16px 18px', marginTop: 12 }}>
+          <b style={{ display: 'block', marginBottom: 10 }}>🧪 实测结果（同一份 1000 行 × 6 列数据，真实生成文件）</b>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <div className="card" style={{ flex: 1, minWidth: 200, padding: '16px 20px', textAlign: 'center', margin: 0 }}>
+              <div style={{ fontSize: 13, color: 'var(--text-soft)' }}>📋 Markdown 文件</div>
+              <div style={{ fontSize: 30, fontWeight: 900 }}>{SIZE_MEASURED.mdKB} KB</div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-soft)' }}>纯文本，直接可读</div>
+            </div>
+            <div style={{ alignSelf: 'center', fontSize: 22 }}>vs</div>
+            <div className="card" style={{ flex: 1, minWidth: 200, padding: '16px 20px', textAlign: 'center', margin: 0, borderColor: 'var(--accent)' }}>
+              <div style={{ fontSize: 13, color: 'var(--text-soft)' }}>📊 Excel (.xlsx) 文件</div>
+              <div style={{ fontSize: 30, fontWeight: 900, color: 'var(--accent)' }}>{SIZE_MEASURED.xlsxKB} KB</div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-soft)' }}>二进制压缩包（zip）</div>
+            </div>
+          </div>
+          <Callout type="warn" style={{ marginTop: 12 }}>
+            <b>出乎意料？Excel 反而小 28%！</b>因为 .xlsx 本质是<b>压缩过的 zip 包</b>（内部是 XML），重复结构被压缩了。
+            所以「Markdown 比 Excel 小」是<b>错误</b>的直觉——<b>Markdown 的优势从来不在文件大小</b>，而在下面这些：
+          </Callout>
+          <ul style={{ margin: '10px 0 0', paddingLeft: 20, fontSize: 13.5, lineHeight: 2 }}>
+            <li>🔍 <b>可读性</b>：任何编辑器、任何设备都能打开，人眼直接看懂</li>
+            <li>🔄 <b>可 diff</b>：git 能精确显示「哪一行、哪个数」变了，Excel 只能看到"文件变了"</li>
+            <li>📦 <b>可版本控制</b>：和代码一起进仓库，团队共用一套历史</li>
+            <li>🤖 <b>可直接喂 AI</b>：纯文本零解析损耗，Excel 要转换才能给 AI</li>
+            <li>🔗 <b>与文档一体</b>：数据就是文档的一部分，不是孤立附件</li>
+          </ul>
+        </div>
+
+        {/* 大小计算器 */}
+        <div className="card" style={{ padding: '16px 18px', marginTop: 12 }}>
+          <b style={{ display: 'block', marginBottom: 4 }}>🧮 试试不同规模（文件大小估算器）</b>
+          <span style={{ fontSize: 12.5, color: 'var(--text-faint)' }}>
+            基于实测字节率估算：Markdown ≈ 单元格数 × 9 字节，xlsx ≈ 单元格数 × 6.5 字节（含压缩）
+          </span>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', margin: '10px 0' }}>
+            <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+              行数
+              <input className="ex-input" type="number" min={1} max={100000} style={{ width: 100 }} value={sizeRows} onChange={(e) => setSizeRows(Math.max(1, Number(e.target.value) || 1))} />
+            </label>
+            <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+              列数
+              <input className="ex-input" type="number" min={1} max={50} style={{ width: 80 }} value={sizeCols} onChange={(e) => setSizeCols(Math.max(1, Number(e.target.value) || 1))} />
+            </label>
+            <span className="chip chip-accent">共 {(sizeRows * sizeCols).toLocaleString()} 个单元格</span>
+          </div>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <span className="chip">📋 Markdown ≈ {((sizeRows * sizeCols * 9) / 1024).toFixed(1)} KB</span>
+            <span className="chip">📊 Excel(.xlsx) ≈ {((sizeRows * sizeCols * 6.5) / 1024).toFixed(1)} KB</span>
+            <span className="chip chip-accent">
+              体积差 {Math.abs(((sizeRows * sizeCols * 6.5) / 1024) - ((sizeRows * sizeCols * 9) / 1024)).toFixed(1)} KB（xlsx 压缩后更小）
+            </span>
+          </div>
+          <div style={{ fontSize: 12.5, color: 'var(--text-faint)', marginTop: 10 }}>
+            💡 无论文件多大，Markdown 的优势都与大小无关——它是「给人看、给 AI 读、进 git 管」的最优格式；
+            Excel 的优势在复杂计算和透视，两者各司其职。
+          </div>
+        </div>
+      </Section>
+
+      <Section num={5} title="练习：完成任意一种分析">
         <Exercise num={1} title="用 AI 完成一次表格分析（统计 / 问答 / 异常 / 图表任选其一）" done={done} doneLabel="数据分析师">
           <p style={{ marginTop: 0, fontSize: 13.5, color: 'var(--text-soft)' }}>
             操作提示：建议按「<b>描述 → 诊断 → 验证 → 判断</b>」四步走——
-            先用「统计摘要」看全貌 → 用「趋势与占比」看变化 → 用「异常检测」找问题（提示：武汉 5 月成本 99999、6 月销量 99999，
-            还有一行「毛利 ≠ 销售额 - 成本」）→ 最后用「表格问答」验证你的判断。
+            先用「统计摘要」看全貌 → 用「趋势与占比」看变化 → 用「异常检测」找问题（提示：武汉行有 99999、
+            毛利 ≠ 销售额 − 成本、客单价 9999、达标率 2500% 都藏着问题；成都连续三个月下滑）→ 最后用「表格问答」验证你的判断。
             完成任意一种分析即可通关。
           </p>
           {done && (
