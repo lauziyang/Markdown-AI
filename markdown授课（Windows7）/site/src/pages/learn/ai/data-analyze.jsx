@@ -59,9 +59,6 @@ const EXCEL_CMP = [
   ['适用场景', '复杂计算、图表透视、多人填报', '轻量数据 + 文档一体化 + 喂给 AI'],
 ]
 
-/* 同一份 1000 行数据的文件大小实测（本课预置数据，已实测生成） */
-const SIZE_MEASURED = { rows: 1000, cols: 6, mdKB: 52.5, xlsxKB: 37.9 }
-
 /* 两种喂数据方式的模拟输出 */
 const EXCEL_SIM = `收到文件「销售数据.xlsx」（本地模拟）
 
@@ -106,8 +103,6 @@ export default function DataAnalyze() {
   const [excelMode, setExcelMode] = useState('')
   const [simOut, setSimOut] = useState('')
   const [simBusy, setSimBusy] = useState(false)
-  const [sizeRows, setSizeRows] = useState(1000)
-  const [sizeCols, setSizeCols] = useState(6)
 
   const runStats = async () => {
     setBusy(true)
@@ -346,7 +341,9 @@ export default function DataAnalyze() {
           <div className="card" style={{ padding: '16px 18px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
               <b>📈 图表建议</b>
-              <span style={{ fontSize: 12.5, color: 'var(--text-faint)' }}>根据表格数据生成 Mermaid 图表代码，可直接贴进「Mermaid 图表工坊」</span>
+              <span style={{ fontSize: 12.5, color: 'var(--text-faint)' }}>
+                柱状图/饼图按门店聚合对比；<b>时间线按月份聚合</b>，直观看到销量随时间的变化趋势
+              </span>
               <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
                 {[
                   { id: 'bar', label: '柱状图' },
@@ -435,73 +432,7 @@ export default function DataAnalyze() {
         </div>
       </Section>
 
-      <Section num={4} title="文件大小实测：Markdown vs Excel">
-        <Callout type="info" title="先猜一猜">
-          同样一份 <b>1000 行 × 6 列</b>的销售数据，分别存成 <b>Markdown 文件</b>和 <b>Excel (.xlsx) 文件</b>，
-          哪个更大？<b>（答案可能和你想的不一样）</b>下面用真实生成的文件实测给你看。
-        </Callout>
-
-        {/* 实测数据 */}
-        <div className="card" style={{ padding: '16px 18px', marginTop: 12 }}>
-          <b style={{ display: 'block', marginBottom: 10 }}>🧪 实测结果（同一份 1000 行 × 6 列数据，真实生成文件）</b>
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <div className="card" style={{ flex: 1, minWidth: 200, padding: '16px 20px', textAlign: 'center', margin: 0 }}>
-              <div style={{ fontSize: 13, color: 'var(--text-soft)' }}>📋 Markdown 文件</div>
-              <div style={{ fontSize: 30, fontWeight: 900 }}>{SIZE_MEASURED.mdKB} KB</div>
-              <div style={{ fontSize: 12.5, color: 'var(--text-soft)' }}>纯文本，直接可读</div>
-            </div>
-            <div style={{ alignSelf: 'center', fontSize: 22 }}>vs</div>
-            <div className="card" style={{ flex: 1, minWidth: 200, padding: '16px 20px', textAlign: 'center', margin: 0, borderColor: 'var(--accent)' }}>
-              <div style={{ fontSize: 13, color: 'var(--text-soft)' }}>📊 Excel (.xlsx) 文件</div>
-              <div style={{ fontSize: 30, fontWeight: 900, color: 'var(--accent)' }}>{SIZE_MEASURED.xlsxKB} KB</div>
-              <div style={{ fontSize: 12.5, color: 'var(--text-soft)' }}>二进制压缩包（zip）</div>
-            </div>
-          </div>
-          <Callout type="warn" style={{ marginTop: 12 }}>
-            <b>出乎意料？Excel 反而小 28%！</b>因为 .xlsx 本质是<b>压缩过的 zip 包</b>（内部是 XML），重复结构被压缩了。
-            所以「Markdown 比 Excel 小」是<b>错误</b>的直觉——<b>Markdown 的优势从来不在文件大小</b>，而在下面这些：
-          </Callout>
-          <ul style={{ margin: '10px 0 0', paddingLeft: 20, fontSize: 13.5, lineHeight: 2 }}>
-            <li>🔍 <b>可读性</b>：任何编辑器、任何设备都能打开，人眼直接看懂</li>
-            <li>🔄 <b>可 diff</b>：git 能精确显示「哪一行、哪个数」变了，Excel 只能看到"文件变了"</li>
-            <li>📦 <b>可版本控制</b>：和代码一起进仓库，团队共用一套历史</li>
-            <li>🤖 <b>可直接喂 AI</b>：纯文本零解析损耗，Excel 要转换才能给 AI</li>
-            <li>🔗 <b>与文档一体</b>：数据就是文档的一部分，不是孤立附件</li>
-          </ul>
-        </div>
-
-        {/* 大小计算器 */}
-        <div className="card" style={{ padding: '16px 18px', marginTop: 12 }}>
-          <b style={{ display: 'block', marginBottom: 4 }}>🧮 试试不同规模（文件大小估算器）</b>
-          <span style={{ fontSize: 12.5, color: 'var(--text-faint)' }}>
-            基于实测字节率估算：Markdown ≈ 单元格数 × 9 字节，xlsx ≈ 单元格数 × 6.5 字节（含压缩）
-          </span>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', margin: '10px 0' }}>
-            <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
-              行数
-              <input className="ex-input" type="number" min={1} max={100000} style={{ width: 100 }} value={sizeRows} onChange={(e) => setSizeRows(Math.max(1, Number(e.target.value) || 1))} />
-            </label>
-            <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
-              列数
-              <input className="ex-input" type="number" min={1} max={50} style={{ width: 80 }} value={sizeCols} onChange={(e) => setSizeCols(Math.max(1, Number(e.target.value) || 1))} />
-            </label>
-            <span className="chip chip-accent">共 {(sizeRows * sizeCols).toLocaleString()} 个单元格</span>
-          </div>
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <span className="chip">📋 Markdown ≈ {((sizeRows * sizeCols * 9) / 1024).toFixed(1)} KB</span>
-            <span className="chip">📊 Excel(.xlsx) ≈ {((sizeRows * sizeCols * 6.5) / 1024).toFixed(1)} KB</span>
-            <span className="chip chip-accent">
-              体积差 {Math.abs(((sizeRows * sizeCols * 6.5) / 1024) - ((sizeRows * sizeCols * 9) / 1024)).toFixed(1)} KB（xlsx 压缩后更小）
-            </span>
-          </div>
-          <div style={{ fontSize: 12.5, color: 'var(--text-faint)', marginTop: 10 }}>
-            💡 无论文件多大，Markdown 的优势都与大小无关——它是「给人看、给 AI 读、进 git 管」的最优格式；
-            Excel 的优势在复杂计算和透视，两者各司其职。
-          </div>
-        </div>
-      </Section>
-
-      <Section num={5} title="练习：完成任意一种分析">
+      <Section num={4} title="练习：完成任意一种分析">
         <Exercise num={1} title="用 AI 完成一次表格分析（统计 / 问答 / 异常 / 图表任选其一）" done={done} doneLabel="数据分析师">
           <p style={{ marginTop: 0, fontSize: 13.5, color: 'var(--text-soft)' }}>
             操作提示：建议按「<b>描述 → 诊断 → 验证 → 判断</b>」四步走——

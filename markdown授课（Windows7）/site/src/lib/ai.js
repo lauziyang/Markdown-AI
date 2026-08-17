@@ -680,7 +680,19 @@ export function mermaidSuggest(md, kind = 'bar') {
     return `\`\`\`mermaid\npie title ${headers[valCol]} 分布\n${items.map((x) => `    "${x.label}" : ${x.val}`).join('\n')}\n\`\`\``
   }
   if (kind === 'timeline') {
-    return `\`\`\`mermaid\ntimeline\ntitle ${headers[valCol]} 变化\n${items.map((x) => `    ${x.label} : ${x.val}`).join('\n')}\n\`\`\``
+    // 时间线：优先按月份聚合，真正体现时间变化趋势
+    if (monthCol >= 0) {
+      const byMonth = {}
+      rows.forEach((r) => {
+        const mon = String(r[monthCol])
+        const v = toNum(r[valCol])
+        if (v !== null) byMonth[mon] = (byMonth[mon] || 0) + v
+      })
+      const months = Object.keys(byMonth).sort()
+      return `\`\`\`mermaid\ntimeline\n    title ${headers[valCol]} 月度趋势\n${months.map((mn) => `    ${mn} : ${byMonth[mn]}`).join('\n')}\n\`\`\``
+    }
+    // 无月份列：退回按名称展示
+    return `\`\`\`mermaid\ntimeline\n    title ${headers[valCol]} 分布\n${items.map((x) => `    ${x.label} : ${x.val}`).join('\n')}\n\`\`\``
   }
   return `\`\`\`mermaid\nxychart-beta\n    title "${headers[valCol]} 对比"\n    x-axis [${items.map((x) => `"${x.label}"`).join(', ')}]\n    y-axis "${headers[valCol]}"\n    bar [${items.map((x) => x.val).join(', ')}]\n\`\`\``
 }
