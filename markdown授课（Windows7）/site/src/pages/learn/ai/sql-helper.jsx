@@ -3,28 +3,46 @@ import { LessonPage, Section, Callout, Exercise, useLessonComplete, CopyBlock } 
 import { simulateStream, aiSql } from '../../../lib/ai.js'
 import { copyText } from '../../../lib/utils.js'
 
-/* 教学表结构（AI 生成 SQL 的前提信息） */
-const TABLE_SCHEMA = `sales（销售表）
-- 门店：TEXT  例：上海 / 北京
+/* 教学表结构（AI 生成 SQL 的前提信息）——三张表，覆盖 JOIN 场景 */
+const TABLE_SCHEMA = `stores（门店表）
+- id：INT 主键
+- 城市：TEXT  例：上海 / 北京 / 成都
+- 区域：TEXT  例：华东 / 华北 / 西南
+
+products（商品表）
+- id：INT 主键
+- 名称：TEXT  例：智能音箱
+- 类别：TEXT  例：数码 / 家电 / 食品
+
+sales（销售表，事实表）
+- id：INT 主键
+- store_id：INT  → 关联 stores.id
+- product_id：INT → 关联 products.id
 - 月份：TEXT  例：2025-06
 - 销量：INT   例：1450
-- 销售额：DECIMAL  例：4350000`
+- 销售额：DECIMAL  例：4350000
+
+关联关系：sales.store_id → stores.id；sales.product_id → products.id`
 
 const Q_SAMPLES = [
   '6月销量最高的3家门店',
   '每家门店的平均销售额',
+  '哪个城市的门店销量最高',
+  '各类别商品6月销售额排名',
+  '把门店按销量分为高/中/低三档',
+  '销量高于平均值的门店',
   '6月销售额合计是多少',
   '销量大于1000的门店',
-  '2025年3月销量最低的门店',
-  '6月一共有多少条销售记录',
 ]
 
-/* AI 写 SQL 的 4 个易错点 */
+/* AI 写 SQL 的 6 个易错点 */
 const PITFALLS = [
   { icon: '🔤', title: '表名 / 列名拼错', desc: 'AI 是「猜」的——sale ≠ sales。生成后必须对照真实表结构核对每个名字。' },
   { icon: '🧩', title: '聚合列忘了 GROUP BY', desc: 'SELECT 同时出现普通列和聚合函数时，必须按普通列 GROUP BY，否则报错或数据错乱。' },
+  { icon: '🔗', title: 'JOIN 忘了写 ON', desc: 'JOIN 必须带关联条件（如 sales.store_id = stores.id），否则产生笛卡尔积，行数爆炸、数据全错。' },
   { icon: '⚖️', title: 'WHERE 与 HAVING 混用', desc: 'WHERE 只能过滤原始行（不能出现聚合函数）；对分组结果做条件要用 HAVING。' },
-  { icon: '🗣️', title: 'SQL 方言差异', desc: 'MySQL 用 LIMIT，SQL Server 用 TOP 3，PostgreSQL 也有细微差别——先告诉 AI 你用的数据库。' },
+  { icon: '🧨', title: 'CASE WHEN 缺 END', desc: 'CASE 表达式必须以 END 结束，条件从上到下匹配，最后一个分支用 ELSE 兜底。' },
+  { icon: '🗣️', title: 'SQL 方言差异', desc: 'MySQL 用 LIMIT，SQL Server 用 TOP 3——先告诉 AI 你用的数据库。' },
 ]
 
 export default function SqlHelper() {
@@ -67,7 +85,7 @@ export default function SqlHelper() {
         <div className="grid-3">
           <div className="card" style={{ padding: '14px 16px' }}>
             <b>📋 1. 表结构</b>
-            <p style={{ fontSize: 12.5, color: 'var(--text-soft)', margin: '6px 0 0' }}>告诉 AI 有哪些表和列、什么类型，它才不会猜错名字。</p>
+            <p style={{ fontSize: 12.5, color: 'var(--text-soft)', margin: '6px 0 0' }}>告诉 AI 有哪些表和列、什么类型、表之间怎么关联（JOIN 键），它才不会猜错。</p>
           </div>
           <div className="card" style={{ padding: '14px 16px' }}>
             <b>🎯 2. 需求</b>
@@ -79,8 +97,9 @@ export default function SqlHelper() {
           </div>
         </div>
         <Callout type="info" style={{ marginTop: 12 }}>
-          <b>本课教学表：</b>以下所有演示都围绕这张 <code>sales</code> 表。
-          <CopyBlock code={TABLE_SCHEMA} lang="text" label="sales 表结构" />
+          <b>本课教学库（三张表）：</b>所有演示围绕 stores / products / sales 三表——<b>单表问题</b>只查 sales，
+          <b>多表问题</b>（按城市、按商品类别）需要 JOIN。这是真实业务里最常见的场景。
+          <CopyBlock code={TABLE_SCHEMA} lang="text" label="三表结构（含关联关系）" />
         </Callout>
       </Section>
 
@@ -116,9 +135,9 @@ export default function SqlHelper() {
         </Exercise>
       </Section>
 
-      <Section num={3} title="AI 写 SQL 的 4 个易错点（重点）">
+      <Section num={3} title="AI 写 SQL 的 6 个易错点（重点）">
         <p style={{ fontSize: 13.5, color: 'var(--text-soft)', margin: '0 0 12px' }}>
-          AI 生成的 SQL <b>必须人工核对</b>。这 4 类错误最常见，下次拿到 AI 输出先按这个清单检查：
+          AI 生成的 SQL <b>必须人工核对</b>。这 6 类错误最常见，下次拿到 AI 输出先按这个清单检查：
         </p>
         <div className="grid-2">
           {PITFALLS.map((p) => (

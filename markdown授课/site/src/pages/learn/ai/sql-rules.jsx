@@ -46,7 +46,18 @@ function BugCard({ bug, index, onSolved }) {
       </pre>
       {!revealed && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
-          <button className="btn btn-sm" onClick={() => { setShow(!show); if (show) setRevealed(true) }}>
+          <button
+            className="btn btn-sm"
+            onClick={() => {
+              if (show) {
+                // 「我知道了，确认」——两条路径都计入完成
+                setRevealed(true)
+                onSolved()
+              } else {
+                setShow(true)
+              }
+            }}
+          >
             {show ? '✅ 我知道了，确认' : '🔍 先看看我的答案'}
           </button>
           <button className="btn btn-sm btn-ghost" onClick={() => { setRevealed(true); onSolved() }}>
@@ -119,7 +130,7 @@ export default function SqlRules() {
       <Section num={2} title="纠错练习：找出 AI 的 4 处错误">
         <Exercise num={1} title={`找出全部 ${SQL_BUGS.length} 类错误（当前 ${Math.min(solved, SQL_BUGS.length)}/${SQL_BUGS.length}）`} done={done} doneLabel="规范守门员">
           <p style={{ marginTop: 0, fontSize: 13.5, color: 'var(--text-soft)' }}>
-            下面 4 段 SQL 都是「AI 生成的」，每段都藏着 <b>{SQL_BUGS.length} 类典型错误之一</b>。
+            下面 {SQL_BUGS.length} 段 SQL 都是「AI 生成的」，每段都藏着 <b>{SQL_BUGS.length} 类典型错误之一</b>。
             先猜错在哪，再点「我知道了」核对——这是防「AI 幻觉」的最好训练。
           </p>
           {SQL_BUGS.map((b, i) => (

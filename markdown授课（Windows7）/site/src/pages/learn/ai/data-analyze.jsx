@@ -1,25 +1,36 @@
 import React, { useEffect, useState } from 'react'
 import { LessonPage, Section, Callout, Exercise, useLessonComplete, CopyBlock } from '../../../components/ui.jsx'
 import MdEditor from '../../../components/MdEditor.jsx'
-import { simulateStream, parseMdTable, analyzeTable, aiTableAnswer, detectTableAnomalies, mermaidSuggest } from '../../../lib/ai.js'
+import { simulateStream, parseMdTable, analyzeTable, analyzeTrend, aiTableAnswer, detectTableAnomalies, mermaidSuggest } from '../../../lib/ai.js'
 import { copyText } from '../../../lib/utils.js'
 
-/* 预置示例：一张含异常值的销售数据表 */
-const SAMPLE_TABLE = `# 2025 上半年各门店销售数据
+/* 预置示例：多维度销售数据（6 门店 × 2 个月，含两处异常与一条下滑趋势） */
+const SAMPLE_TABLE = `# 门店销售数据分析（2025 年 5-6 月）
 
-| 门店 | 月度销量 | 销售额(万元) |
-| ---- | -------- | ------------ |
-| 北京 | 1200 | 360 |
-| 上海 | 1450 | 435 |
-| 广州 | 980 | 294 |
-| 深圳 | 1100 | 330 |
-| 成都 | 850 | 255 |
-| 杭州 | 1300 | 390 |
-| 武汉 | 99999 | 30000 |
-| 西安 | 760 | 228 |
+| 门店 | 月份 | 销量 | 销售额(万) | 成本(万) | 毛利(万) |
+| ---- | ---- | ---- | ---------- | -------- | -------- |
+| 北京 | 2025-05 | 1150 | 345 | 240 | 105 |
+| 北京 | 2025-06 | 1200 | 360 | 250 | 110 |
+| 上海 | 2025-05 | 1380 | 414 | 280 | 134 |
+| 上海 | 2025-06 | 1450 | 435 | 300 | 135 |
+| 广州 | 2025-05 | 1005 | 302 | 220 | 82 |
+| 广州 | 2025-06 | 980 | 294 | 215 | 79 |
+| 深圳 | 2025-05 | 1060 | 318 | 230 | 88 |
+| 深圳 | 2025-06 | 1100 | 330 | 240 | 90 |
+| 成都 | 2025-05 | 920 | 276 | 210 | 66 |
+| 成都 | 2025-06 | 850 | 255 | 200 | 55 |
+| 武汉 | 2025-05 | 1300 | 390 | 99999 | 88 |
+| 武汉 | 2025-06 | 99999 | 30000 | 400 | 99999 |
 `
 
-const Q_SAMPLES = ['哪家门店销量最高？', '销售额合计是多少？', '哪家门店销量最低？', '平均月度销量是多少？']
+const Q_SAMPLES = [
+  '哪家门店6月销量最高？',
+  '6月销售额合计是多少？',
+  '武汉6月比5月销量多多少？',
+  '北京6月销量占全部门店的比例？',
+  '6月较5月整体销售额环比增长多少？',
+  '哪家门店6月成本异常？',
+]
 
 /* Excel vs Markdown 逐项对比表 */
 const EXCEL_CMP = [
@@ -51,7 +62,7 @@ const MD_SIM = `收到 Markdown 表格（就是上方编辑器里的内容）
 
 AI 处理过程：
 1. 按 | 分隔符逐行读取表头与数据…
-2. 共识别 8 行数据、3 列（门店 / 月度销量 / 销售额(万元)）…
+2. 共识别 12 行数据、6 列（门店 / 月份 / 销量 / 销售额 / 成本 / 毛利）…
 3. 数值列直接可用于计算，无解析损耗…
 4. 所有单元格内容对 AI 和人类完全透明…
 
@@ -63,9 +74,10 @@ AI 处理过程：
 export default function DataAnalyze() {
   const { done, markDone } = useLessonComplete('data-analyze')
   const [src, setSrc] = useState(SAMPLE_TABLE)
-  const [tab, setTab] = useState('stats') // stats | qa | anomaly | chart
+  const [tab, setTab] = useState('stats') // stats | trend | qa | anomaly | chart
   const [question, setQuestion] = useState('')
   const [statsText, setStatsText] = useState('')
+  const [trendText, setTrendText] = useState('')
   const [answer, setAnswer] = useState('')
   const [anomalies, setAnomalies] = useState(null)
   const [chartKind, setChartKind] = useState('bar')
@@ -75,6 +87,24 @@ export default function DataAnalyze() {
   const [excelMode, setExcelMode] = useState('')
   const [simOut, setSimOut] = useState('')
   const [simBusy, setSimBusy] = useState(false)
+
+  const runStats = async () => {
+    setBusy(true)
+    setStatsText('')
+    const result = analyzeTable(src)
+    await simulateStream(result, (c) => setStatsText(c), 14)
+    setBusy(false)
+    setAsked(true)
+  }
+
+  const runTrend = async () => {
+    setBusy(true)
+    setTrendText('')
+    const result = analyzeTrend(src)
+    await simulateStream(result, (c) => setTrendText(c), 14)
+    setBusy(false)
+    setAsked(true)
+  }
 
   const simExcel = async () => {
     if (simBusy) return
@@ -93,15 +123,6 @@ export default function DataAnalyze() {
     setSimOut('')
     await simulateStream(MD_SIM, (c) => setSimOut(c), 10)
     setSimBusy(false)
-    setAsked(true)
-  }
-
-  const runStats = async () => {
-    setBusy(true)
-    setStatsText('')
-    const result = analyzeTable(src)
-    await simulateStream(result, (c) => setStatsText(c), 14)
-    setBusy(false)
     setAsked(true)
   }
 
@@ -133,7 +154,7 @@ export default function DataAnalyze() {
     setAsked(true)
   }
 
-  const passed = asked && (statsText.length > 10 || answer.length > 10 || (anomalies && anomalies.length) || chartCode.length > 10)
+  const passed = asked && (statsText.length > 10 || trendText.length > 10 || answer.length > 10 || (anomalies && anomalies.length) || chartCode.length > 10)
   useEffect(() => {
     if (passed) markDone()
   }, [passed, markDone])
@@ -153,8 +174,9 @@ export default function DataAnalyze() {
     >
       <Section num={1} title="一张表格，AI 能看出什么？">
         <p style={{ fontSize: 14, color: 'var(--text-soft)', margin: '0 0 12px', lineHeight: 1.8 }}>
-          下面的表格是预置的示例（<b>注意：武汉行藏了一个异常值</b>）。
-          你可以直接用它体验，也可以编辑成你自己的数据。左侧<b>切换 4 种分析能力</b>逐项试试。
+          示例表格是 <b>6 家门店 × 2 个月</b>的销售数据（销量、销售额、成本、毛利），
+          <b>藏着两处异常值和一条下滑趋势</b>，还考验你能否发现「毛利 = 销售额 - 成本」被破坏的行。
+          你可以直接用它体验，也可以编辑成你自己的数据。左侧<b>切换 5 种分析能力</b>逐项试试。
         </p>
         <MdEditor
           value={src}
@@ -165,10 +187,11 @@ export default function DataAnalyze() {
         />
       </Section>
 
-      <Section num={2} title="4 种分析能力（点标签切换）">
+      <Section num={2} title="5 种分析能力（点标签切换）">
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
           {[
             { id: 'stats', icon: '🧮', label: '统计摘要' },
+            { id: 'trend', icon: '📉', label: '趋势与占比' },
             { id: 'qa', icon: '💬', label: '表格问答' },
             { id: 'anomaly', icon: '🕵️', label: '异常检测' },
             { id: 'chart', icon: '📈', label: '图表建议' },
@@ -188,7 +211,7 @@ export default function DataAnalyze() {
           <div className="card" style={{ padding: '16px 18px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
               <b>🧮 统计摘要</b>
-              <span style={{ fontSize: 12.5, color: 'var(--text-faint)' }}>行数、数值列合计 / 均值 / 最大最小、Top 排名</span>
+              <span style={{ fontSize: 12.5, color: 'var(--text-faint)' }}>行数、各数值列合计 / 均值 / 最大最小、Top 排名</span>
               <button className="btn btn-sm btn-primary" style={{ marginLeft: 'auto' }} onClick={runStats} disabled={busy}>
                 {busy ? '⏳ 分析中…' : '🤖 一键分析'}
               </button>
@@ -199,8 +222,32 @@ export default function DataAnalyze() {
                 padding: '12px 14px', fontSize: 13.5, lineHeight: 1.9, minHeight: 90, margin: 0, whiteSpace: 'pre-wrap',
               }}
             >
-              {statsText || '点击「一键分析」，AI 会把这张表的统计结论逐字写出来…'}
+              {statsText || '点击「一键分析」，AI 会把这张表所有数值列的统计结论逐字写出来…'}
             </pre>
+          </div>
+        )}
+
+        {/* 趋势与占比 */}
+        {tab === 'trend' && (
+          <div className="card" style={{ padding: '16px 18px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+              <b>📉 趋势与占比分析</b>
+              <span style={{ fontSize: 12.5, color: 'var(--text-faint)' }}>门店占比、月度环比、连续增长 / 下滑识别</span>
+              <button className="btn btn-sm btn-primary" style={{ marginLeft: 'auto' }} onClick={runTrend} disabled={busy}>
+                {busy ? '⏳ 分析中…' : '🤖 分析趋势'}
+              </button>
+            </div>
+            <pre
+              style={{
+                background: 'var(--code-bg)', color: 'var(--code-text)', borderRadius: 10,
+                padding: '12px 14px', fontSize: 13.5, lineHeight: 1.9, minHeight: 100, margin: 0, whiteSpace: 'pre-wrap',
+              }}
+            >
+              {trendText || '点击「分析趋势」——注意观察：哪家门店 6 月较 5 月下滑了？毛利和成本的异常会不会影响结论？'}
+            </pre>
+            <div style={{ fontSize: 12.5, color: 'var(--text-faint)', marginTop: 10 }}>
+              💡 教学点：分析「数据怎么变」（趋势）比只看「数据是多少」（统计）更进一步——环比、占比、连续趋势是商业分析的基本功。
+            </div>
           </div>
         )}
 
@@ -369,8 +416,10 @@ export default function DataAnalyze() {
       <Section num={4} title="练习：完成任意一种分析">
         <Exercise num={1} title="用 AI 完成一次表格分析（统计 / 问答 / 异常 / 图表任选其一）" done={done} doneLabel="数据分析师">
           <p style={{ marginTop: 0, fontSize: 13.5, color: 'var(--text-soft)' }}>
-            操作提示：建议先用「统计摘要」看全貌，再用「异常检测」找问题（提示：看看武汉那行），
-            最后用「表格问答」验证你的判断——这就是数据分析的完整闭环：<b>描述 → 诊断 → 验证</b>。
+            操作提示：建议按「<b>描述 → 诊断 → 验证 → 判断</b>」四步走——
+            先用「统计摘要」看全貌 → 用「趋势与占比」看变化 → 用「异常检测」找问题（提示：武汉 5 月成本 99999、6 月销量 99999，
+            还有一行「毛利 ≠ 销售额 - 成本」）→ 最后用「表格问答」验证你的判断。
+            完成任意一种分析即可通关。
           </p>
           {done && (
             <Callout type="tip">

@@ -387,7 +387,11 @@ export function aiTableAnswer(md, question) {
   if (!headers.length) return '没有检测到表格，请先粘贴一张 Markdown 表格再提问。'
   const q = (question || '').trim()
   if (!q) return '请先输入一个问题，例如「哪个月销量最高？」'
-  const numsCol = headers.findIndex((_, ci) => rows.some((r) => toNum(r[ci]) !== null))
+  // 数值列排除月份列（2025-05 会被解析成数字）和第一列（通常是文本名）
+  const monthCol = headers.findIndex((h) => /月|month/i.test(h))
+  const numsCol = headers.findIndex(
+    (_, ci) => ci !== monthCol && ci !== 0 && rows.some((r) => toNum(r[ci]) !== null)
+  )
   const firstCol = 0
   // 问最大/最高
   if (/最大|最高|最多|冠军|第一/.test(q) && numsCol >= 0) {
@@ -423,6 +427,67 @@ export function aiTableAnswer(md, question) {
   if (/多少行|几行|多少条|几个/.test(q)) {
     return `表格共有 ${rows.length} 行数据（不含表头）。依据：统计 | 分隔的数据行数。`
   }
+  // 问占比/百分比
+  if (/占比|百分之|占多少|比例/.test(q) && numsCol >= 0) {
+    const total = rows.reduce((a, r) => a + (toNum(r[numsCol]) || 0), 0)
+    const parts = rows
+      .map((r) => ({ label: r[0], val: toNum(r[numsCol]) || 0 }))
+      .sort((a, b) => b.val - a.val)
+    if (total > 0) {
+      const top = parts[0]
+      return `「${headers[numsCol]}」总量为 ${fmt(total)}，其中 ${top.label} 占比最高，约 ${Math.round((top.val / total) * 100)}%（${fmt(top.val)}/${fmt(total)}）。依据：各值 ÷ 总量。`
+    }
+  }
+  // 问比较：A 比 B 多/少多少（跨门店 或 同门店跨月份）
+  const cmpM = q.match(/(.+?)(?:比|vs|对比)(.+?)(多|少|高|低)(?:多少|几个)?[？?]?$/)
+  if (cmpM) {
+    const findStore = (label) => rows.find((r) => r[0] && (label.includes(r[0]) || r[0].includes(label)))
+    const aRow = findStore(cmpM[1])
+    const bRow = findStore(cmpM[2])
+    // 跨门店比较
+    if (aRow && bRow && aRow !== bRow && numsCol >= 0) {
+      const va = toNum(aRow[numsCol]) || 0
+      const vb = toNum(bRow[numsCol]) || 0
+      const diff = va - vb
+      return `${aRow[0]} 的「${headers[numsCol]}」为 ${fmt(va)}，${bRow[0]} 为 ${fmt(vb)}，相差 ${fmt(Math.abs(diff))}（${diff >= 0 ? aRow[0] + ' 多' : bRow[0] + ' 多'}）。依据：两行「${headers[numsCol]}」列直接相减。`
+    }
+    // 同门店跨月份（如「武汉 6 月比 5 月销量多多少」）
+    if (aRow && monthCol >= 0 && /月/.test(q) && numsCol >= 0) {
+      const name = aRow[0]
+      const storeRows = rows.filter((r) => r[0] === name)
+      if (storeRows.length >= 2) {
+        const sorted = storeRows.slice().sort((x, y) => (String(x[monthCol]) < String(y[monthCol]) ? -1 : 1))
+        const cur = sorted[sorted.length - 1]
+        const prev = sorted[sorted.length - 2]
+        const vc = toNum(cur[numsCol]) || 0
+        const vp = toNum(prev[numsCol]) || 0
+        const diff = vc - vp
+        return `${name} ${cur[monthCol]} 的「${headers[numsCol]}」为 ${fmt(vc)}，${prev[monthCol]} 为 ${fmt(vp)}，${
+          diff >= 0 ? `多了 ${fmt(diff)}` : `少了 ${fmt(Math.abs(diff))}`
+        }。依据：同门店「${name}」相邻两期数值相减。`
+      }
+    }
+  }
+  // 问环比/增长率（需要月份列）
+  if (/环比|增长|涨幅|下降|趋势/.test(q) && monthCol >= 0 && numsCol >= 0) {
+    const byMonth = {}
+    rows.forEach((r) => {
+      const mk = String(r[monthCol])
+      byMonth[mk] = byMonth[mk] || []
+      byMonth[mk].push({ label: r[0], val: toNum(r[numsCol]) })
+    })
+    const months = Object.keys(byMonth).sort()
+    if (months.length >= 2) {
+      const cur = byMonth[months[months.length - 1]].reduce((a, x) => a + (x.val || 0), 0)
+      const prev = byMonth[months[months.length - 2]].reduce((a, x) => a + (x.val || 0), 0)
+      if (prev !== 0) {
+        const rate = ((cur - prev) / prev) * 100
+        return `「${headers[numsCol]}」${months[months.length - 1]} 合计 ${fmt(cur)}，较 ${months[months.length - 2]} 的 ${fmt(prev)} ${
+          rate >= 0 ? `增长 ${fmt(rate)}%` : `下降 ${fmt(Math.abs(rate))}%`
+        }。依据：两期合计相减 ÷ 上期。`
+      }
+    }
+  }
   // 问某一行/某人
   const rowHit = rows.find((r) => r.some((c) => c.includes(q.replace(/[？?的]/, ''))))
   if (rowHit) {
@@ -433,6 +498,77 @@ export function aiTableAnswer(md, question) {
     `我理解你的问题是在问「${q}」。分析这张表（${headers.join('、')}）后，` +
     `建议查看数值列进行对比。你可以试试这样问：「哪一行 ${headers[numsCol >= 0 ? numsCol : 0]} 最大？」`
   )
+}
+
+/** 趋势与占比分析：按月环比、门店占比、连续增长/下滑识别（本地模拟） */
+export function analyzeTrend(md) {
+  const { headers, rows } = parseMdTable(md)
+  if (!headers.length) return '没有检测到表格。'
+  const monthCol = headers.findIndex((h) => /月|month/i.test(h))
+  const parts = []
+  // 1) 占比：选「第一个真实数值列」（跳过月份列，月份如 2025-05 会被解析成数字）
+  const firstNum = headers.findIndex(
+    (_, ci) => ci !== monthCol && ci !== 0 && rows.some((r) => toNum(r[ci]) !== null)
+  )
+  if (firstNum >= 0) {
+    // 按第一列分组求和（避免同一门店多行重复计）
+    const byLabel = {}
+    rows.forEach((r) => {
+      const key = r[0]
+      byLabel[key] = (byLabel[key] || 0) + (toNum(r[firstNum]) || 0)
+    })
+    const total = Object.values(byLabel).reduce((a, b) => a + b, 0)
+    if (total > 0) {
+      const sorted = Object.entries(byLabel)
+        .map(([label, val]) => ({ label, val }))
+        .sort((a, b) => b.val - a.val)
+      const top = sorted[0]
+      const top3 = (sorted[0]?.val || 0) + (sorted[1]?.val || 0) + (sorted[2]?.val || 0)
+      parts.push(`【占比】按「${headers[firstNum]}」计（按${headers[0]}汇总），${top.label} 占比最高 ${Math.round((top.val / total) * 100)}%，Top3 合计约 ${Math.round((top3 / total) * 100)}%。`)
+    }
+  }
+  // 2) 环比趋势（有月份列时）
+  if (monthCol >= 0) {
+    const byMonth = {}
+    rows.forEach((r) => {
+      const mk = String(r[monthCol])
+      byMonth[mk] = byMonth[mk] || { total: 0, rows: [] }
+      byMonth[mk].rows.push(r)
+      headers.forEach((h, ci) => {
+        if (ci !== monthCol && ci !== 0 && toNum(r[ci]) !== null) byMonth[mk].total += toNum(r[ci])
+      })
+    })
+    const months = Object.keys(byMonth).sort()
+    if (months.length >= 2) {
+      const rates = []
+      for (let i = 1; i < months.length; i++) {
+        const prev = byMonth[months[i - 1]].total
+        const cur = byMonth[months[i]].total
+        if (prev !== 0) rates.push({ from: months[i - 1], to: months[i], rate: ((cur - prev) / prev) * 100 })
+      }
+      const last = rates[rates.length - 1]
+      if (last) {
+        parts.push(`【环比】${last.to} 较 ${last.from} 整体 ${last.rate >= 0 ? `增长 ${fmt(last.rate)}%` : `下降 ${fmt(Math.abs(last.rate))}%`}（按各数值列合计）。`)
+      }
+      // 连续增长/下滑的门店
+      const names = [...new Set(rows.map((r) => r[0]))]
+      const losers = []
+      const winners = []
+      names.forEach((name) => {
+        const series = months.map((mk) =>
+          (byMonth[mk].rows.find((r) => r[0] === name) || []).reduce((s, r) => s, 0) ||
+          rows.find((r) => r[0] === name && r[monthCol] === mk)
+        ).filter(Boolean)
+        const vals = series.map((r) => headers.reduce((s, h, ci) => (ci !== monthCol && ci !== 0 && toNum(r[ci]) !== null ? s + toNum(r[ci]) : s), 0))
+        if (vals.length >= 2 && vals.every((v, i) => i === 0 || v < vals[i - 1])) losers.push(name)
+        if (vals.length >= 2 && vals.every((v, i) => i === 0 || v > vals[i - 1])) winners.push(name)
+      })
+      if (winners.length) parts.push(`【趋势】${winners.join('、')} 连续增长，势头良好。`)
+      if (losers.length) parts.push(`【风险】${losers.join('、')} 连续下滑，建议关注（依据：各期数值逐期下降）。`)
+    }
+  }
+  if (!parts.length) parts.push('表格缺少月份列或多期数据，无法做趋势分析；占比分析需要数值列。')
+  return parts.join('\n')
 }
 
 /** 异常值检测：数字远超 3 倍均值、空单元格、重复行、格式不统一 */
@@ -712,12 +848,43 @@ export function aiSql(question) {
   else if (!wantTopN && /最高|最大|最多|冠军|MAX/.test(q)) { aggExpr = 'MAX(销量)'; aggCol = 'max_sales'; notes.push('识别到「最高」→ 用 MAX() 聚合') }
   else if (!wantTopN && /最低|最小|最少|MIN/.test(q)) { aggExpr = 'MIN(销量)'; aggCol = 'min_sales'; notes.push('识别到「最低」→ 用 MIN() 聚合') }
 
-  // 分组
+  // 多表 JOIN 识别：按城市/区域 → stores；按类别/商品 → products
+  const joins = []
+  if (/城市|区域|地区/.test(q)) {
+    joins.push('INNER JOIN stores ON sales.store_id = stores.id')
+    notes.push('识别到「按城市」维度 → 关联 stores 表（销售表只有 store_id，城市名在 stores 表里）')
+  }
+  if (/类别|品类|商品/.test(q)) {
+    joins.push('INNER JOIN products ON sales.product_id = products.id')
+    notes.push('识别到「按商品类别」维度 → 关联 products 表')
+  }
+
+  // 分组（支持多表维度）
   const group = /按(.+?)(分组|统计|汇总|看)|每家门店|各门店|每个(.+?)(的)?/.exec(q)
   let groupBy = null
-  if (group && /门店/.test(group[1] || '') || /每家门店|各门店/.test(q)) {
+  if (joins.length === 0 && (group && /门店/.test(group[1] || '') || /每家门店|各门店/.test(q))) {
     groupBy = '门店'
     notes.push('识别到「按门店分组」→ GROUP BY 门店')
+  } else if (/城市|区域|地区/.test(q) && (group || /每个城市|各城市|哪座城市|哪个城市/.test(q))) {
+    groupBy = 'stores.城市'
+    notes.push('识别到「按城市分组」→ GROUP BY stores.城市（JOIN 后按关联表列分组）')
+  } else if (/类别|品类/.test(q) && (group || /每个类别|各类别|哪种/.test(q))) {
+    groupBy = 'products.类别'
+    notes.push('识别到「按类别分组」→ GROUP BY products.类别')
+  }
+
+  // CASE WHEN 分档（"分为高/中/低"）
+  let caseExpr = null
+  if (/分.{0,3}(高|中|低|档)|分档|档位/.test(q)) {
+    caseExpr = `CASE\n    WHEN 销量 >= 1000 THEN '高'\n    WHEN 销量 >= 800 THEN '中'\n    ELSE '低'\n  END AS 档位`
+    notes.push('识别到「分档」→ 用 CASE WHEN 按销量阈值分高/中/低三档')
+  }
+
+  // 子查询（"高于平均"）
+  let subquery = null
+  if (/高于平均|超过平均|比平均/.test(q)) {
+    subquery = 'WHERE 销量 > (SELECT AVG(销量) FROM sales)'
+    notes.push('识别到「高于平均」→ 用子查询 SELECT AVG(销量) 作为阈值，WHERE 比较')
   }
 
   // 排序与 LIMIT
@@ -742,9 +909,14 @@ export function aiSql(question) {
   let cols
   if (aggExpr && groupBy) cols = `${groupBy}, ${aggExpr} AS ${aggCol}`
   else if (aggExpr) cols = `${aggExpr} AS ${aggCol}`
+  else if (caseExpr) cols = `门店, ${caseExpr}`
+  else if (joins.length && /城市|区域|地区/.test(q) && !groupBy) cols = 'sales.id, sales.门店, stores.城市, sales.销量'
+  else if (joins.length && /类别|品类/.test(q) && !groupBy) cols = 'sales.id, products.名称, products.类别, sales.销量'
   else cols = select.join(', ')
   const lines = ['SELECT ' + cols, 'FROM sales']
-  if (where.length) lines.push('WHERE ' + where.join(' AND '))
+  joins.forEach((j) => lines.push(j))
+  if (subquery) lines.push(subquery)
+  else if (where.length) lines.push('WHERE ' + where.join(' AND '))
   if (groupBy) lines.push('GROUP BY ' + groupBy)
   if (orderBy) lines.push('ORDER BY ' + orderBy)
   if (limit) lines.push('LIMIT ' + limit)
@@ -778,10 +950,17 @@ export function sqlToMarkdown(text) {
 export function aiInterpretResult(mdTable) {
   const { headers, rows } = parseMdTable(mdTable)
   if (!headers.length) return '没有识别到表格，请先用「结果转表格」把查询结果转成 Markdown 表格。'
+  // 数值列：排除月份列（2025-05 会被解析成数字）与第一列（通常是门店等文本名）
+  const monthCol = headers.findIndex((h) => /月|month/i.test(h))
   const valCols = headers
     .map((h, ci) => ({ h, ci }))
-    .filter(({ ci }) => rows.some((r) => toNum(r[ci]) !== null))
+    .filter(({ ci }) => ci !== monthCol && ci !== 0 && rows.some((r) => toNum(r[ci]) !== null))
   if (!valCols.length) return '表格中没有数值列，无法做统计分析。'
+  // 名称列：第一个非数值、非月份的列（通常是门店/商品名）
+  const nameCol = headers.findIndex(
+    (h, ci) => ci !== monthCol && rows.every((r) => toNum(r[ci]) === null || String(r[ci]).trim() === '')
+  )
+  const labelOf = (r) => (nameCol >= 0 ? r[nameCol] : r[0])
   const parts = [`# 数据分析报告\n`, `## 一、数据概览\n`, `| ${headers.join(' | ')} |`, `| ${headers.map(() => '---').join(' | ')} |`]
   rows.forEach((r) => parts.push(`| ${r.map((c) => c || ' ').join(' | ')} |`))
   parts.push('', '## 二、主要发现')
@@ -790,7 +969,7 @@ export function aiInterpretResult(mdTable) {
   const nums = rows.map((r) => toNum(r[firstVal.ci])).filter((n) => n !== null)
   const avg = nums.reduce((a, b) => a + b, 0) / nums.length
   const sorted = rows
-    .map((r) => ({ label: r[0], val: toNum(r[firstVal.ci]) }))
+    .map((r) => ({ label: labelOf(r), val: toNum(r[firstVal.ci]) }))
     .filter((x) => x.val !== null)
     .sort((a, b) => b.val - a.val)
   if (sorted.length) {
@@ -799,10 +978,34 @@ export function aiInterpretResult(mdTable) {
     const outliers = sorted.filter((x) => Math.abs(x.val) > Math.abs(avg) * 3)
     if (outliers.length) findings.push(`3. ⚠️ **疑似异常**：${outliers.map((o) => `${o.label}（${fmt(o.val)}）`).join('、')} 远超均值，请核对源数据（依据：超过均值 3 倍判定）`)
   }
+  // 环比发现（识别月份列，按门店比较相邻月份）
+  if (monthCol >= 0) {
+    const byName = {}
+    rows.forEach((r) => {
+      byName[labelOf(r)] = byName[labelOf(r)] || []
+      byName[labelOf(r)].push({ mon: String(r[monthCol]), val: toNum(r[firstVal.ci]) })
+    })
+    const mojis = Object.entries(byName)
+      .map(([name, arr]) => {
+        arr.sort((a, b) => (a.mon < b.mon ? -1 : 1))
+        if (arr.length < 2) return null
+        const last = arr[arr.length - 1]
+        const prev = arr[arr.length - 2]
+        if (last.val === null || prev.val === null || prev.val === 0) return null
+        const rate = ((last.val - prev.val) / prev.val) * 100
+        return { name, from: prev.mon, to: last.mon, rate, val: last.val }
+      })
+      .filter(Boolean)
+    if (mojis.length) {
+      const worst = mojis.slice().sort((a, b) => a.rate - b.rate)[0]
+      const best = mojis.slice().sort((a, b) => b.rate - a.rate)[0]
+      findings.push(`4. **环比**：${best.name} ${best.to} 较 ${best.from} 增长 ${fmt(best.rate)}%；⚠️ ${worst.name} 下降 ${fmt(Math.abs(worst.rate))}%，需关注（依据：${best.name}/${worst.name} 相邻两期 ${firstVal.h} 相除）`)
+    }
+  }
   parts.push(...(findings.length ? findings : ['1. 数据整体平稳，未发现明显异常（依据：各值均在均值合理范围内）']))
   parts.push('', '## 三、建议')
   parts.push('- [ ] 对领跑门店复盘成功动作，形成可复制经验')
-  parts.push('- [ ] 对垫底门店做专项分析，制定改进计划')
+  parts.push('- [ ] 对环比下滑的门店做专项分析，制定改进计划')
   parts.push('- [ ] 用图表（Mermaid）直观呈现趋势')
   parts.push('', '> 💡 本报告由 AI 基于表格数据自动生成——结论都有「依据」可回溯，修改建议请结合业务实际判断。')
   return parts.join('\n')
@@ -833,5 +1036,17 @@ export const SQL_BUGS = [
     wrong: 'SELECT TOP 3 门店, 销量 FROM sales;   -- 这是 SQL Server 写法',
     right: 'SELECT 门店, 销量 FROM sales\nORDER BY 销量 DESC\nLIMIT 3;   -- MySQL 用 LIMIT',
     explain: '不同数据库方言不同：MySQL 用 LIMIT，SQL Server 用 TOP。问 AI 前要先说明你用的数据库。',
+  },
+  {
+    title: 'JOIN 忘了写关联条件（ON）',
+    wrong: 'SELECT stores.城市, SUM(sales.销售额)\nFROM sales\nINNER JOIN stores\nGROUP BY stores.城市;',
+    right: 'SELECT stores.城市, SUM(sales.销售额)\nFROM sales\nINNER JOIN stores ON sales.store_id = stores.id\nGROUP BY stores.城市;',
+    explain: 'JOIN 必须带 ON 关联条件，否则变成笛卡尔积（行数爆炸、数据全错）。AI 最常漏掉的就是 ON。',
+  },
+  {
+    title: 'CASE WHEN 缺少 END / 条件重叠',
+    wrong: 'SELECT 门店,\n  CASE\n    WHEN 销量 >= 1000 THEN \'高\'\n    WHEN 销量 >= 500 THEN \'中\'\n    WHEN 销量 >= 0 THEN \'低\'\n  FROM sales;',
+    right: 'SELECT 门店,\n  CASE\n    WHEN 销量 >= 1000 THEN \'高\'\n    WHEN 销量 >= 500 THEN \'中\'\n    ELSE \'低\'\n  END AS 档位\nFROM sales;',
+    explain: 'CASE 表达式必须用 END 结束（还常配 AS 别名）；条件从上到下匹配，最后一个分支用 ELSE 兜底最稳妥。',
   },
 ]

@@ -3,14 +3,18 @@ import { LessonPage, Section, Callout, Exercise, useLessonComplete } from '../..
 import { simulateStream, sqlToMarkdown, aiInterpretResult } from '../../../lib/ai.js'
 import { copyText } from '../../../lib/utils.js'
 
-/* 预置示例：一段"查询结果"（制表符分隔，模拟数据库客户端输出） */
-const RESULT_SAMPLE = `门店	销量	销售额
-上海	1450	4350000
-北京	1200	3600000
-深圳	1100	3300000
-广州	980	2940000
-成都	850	2550000
-武汉	99999	30000000`
+/* 预置示例：一段"查询结果"（制表符分隔，含月份维度——AI 报告会做环比分析） */
+const RESULT_SAMPLE = `月份	门店	销量	销售额
+2025-05	上海	1380	4140000
+2025-06	上海	1450	4350000
+2025-05	北京	1150	3450000
+2025-06	北京	1200	3600000
+2025-05	深圳	1060	3180000
+2025-06	深圳	1100	3300000
+2025-05	成都	920	2760000
+2025-06	成都	850	2550000
+2025-05	武汉	1300	3900000
+2025-06	武汉	99999	30000000`
 
 /* Markdown 报告 vs Excel/Word 报告的对比 */
 const CMP_ROWS = [
@@ -196,8 +200,8 @@ export default function SqlReport() {
         <Exercise num={1} title="完成「结果转表格 + AI 生成报告」两步" done={done} doneLabel="数据报告师">
           <p style={{ marginTop: 0, fontSize: 13.5, color: 'var(--text-soft)' }}>
             推荐流程：① 点「转换」把示例查询结果变成表格 → ② 切到「AI 解读报告」点「生成报告」→
-            观察报告里的<b>「依据：……」</b>——每一条结论都能回溯到表格里的哪一行，这就是 Markdown 报告的核心优势。
-            （提示：示例数据里武汉那行藏了个异常值，看看 AI 发现了没有。）
+            观察报告里的<b>「依据：……」</b>和<b>「环比」</b>——每条结论都能回溯到表格里的哪一行、哪一期，
+            这就是 Markdown 报告的核心优势。（提示：示例里武汉 6 月销量 99999 是异常值，看看 AI 发现了没有。）
           </p>
           {done && (
             <Callout type="tip">
