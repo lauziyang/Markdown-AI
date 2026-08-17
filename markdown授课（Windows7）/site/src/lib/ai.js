@@ -654,11 +654,27 @@ export function detectTableAnomalies(md) {
 export function mermaidSuggest(md, kind = 'bar') {
   const { headers, rows } = parseMdTable(md)
   if (!headers.length) return '```mermaid\n%% 没有检测到表格\n```'
-  const valCol = headers.findIndex((_, ci) => rows.some((r) => toNum(r[ci]) !== null))
+  // 数值列：排除月份列（2025-04 会被解析成 2025）与第一列（门店名等文本列）
+  const monthCol = headers.findIndex((h) => /月|month/i.test(h))
+  const valCol = headers.findIndex(
+    (_, ci) => ci !== monthCol && ci !== 0 && rows.some((r) => toNum(r[ci]) !== null)
+  )
   if (valCol < 0) return '```mermaid\n%% 表格中没有数值列，无法生成图表\n```'
-  const items = rows
-    .map((r) => ({ label: r[0], val: toNum(r[valCol]) }))
-    .filter((x) => x.val !== null)
+  // 名称列：第一个非数值、非月份的列（门店/商品名）
+  const nameCol = headers.findIndex(
+    (h, ci) => ci !== monthCol && rows.every((r) => toNum(r[ci]) === null || String(r[ci]).trim() === '')
+  )
+  const labelOf = (r) => (nameCol >= 0 ? r[nameCol] : r[0])
+  // 按名称列聚合（同一门店多行 → 求和），避免 x 轴重复、图表拥挤
+  const byLabel = {}
+  rows.forEach((r) => {
+    const label = labelOf(r)
+    const v = toNum(r[valCol])
+    if (v !== null) byLabel[label] = (byLabel[label] || 0) + v
+  })
+  const items = Object.entries(byLabel)
+    .map(([label, val]) => ({ label, val }))
+    .sort((a, b) => b.val - a.val)
     .slice(0, 8)
   if (kind === 'pie') {
     return `\`\`\`mermaid\npie title ${headers[valCol]} 分布\n${items.map((x) => `    "${x.label}" : ${x.val}`).join('\n')}\n\`\`\``
