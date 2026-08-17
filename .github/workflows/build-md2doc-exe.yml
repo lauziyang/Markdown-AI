@@ -1,11 +1,19 @@
 name: build-md2doc-releases
 
-# 自动构建「Markdown 转公文工具 v2.0」的多平台可执行文件并发布到 Releases
-# - 推送到 main 分支：构建并上传为 Actions 工件（Artifacts），不发布
-# - 打 tag（如 v2.0.1）：构建并生成带完整说明的 Releases 下载页
+# 自动构建「Markdown 转公文工具 v2.0」并发布到 Releases
+# - 推送到 main 分支：构建 Windows exe 并上传为 Actions 工件（Artifacts），不发布
+# - 打 tag（如 v2.0.2）：构建并生成带完整说明的 Releases 下载页
+#
+# 说明（v3）：
+#   GitHub Actions 的 macOS 免费 runner（尤其 Intel macos-13）排队极严重，
+#   曾出现卡 40 分钟以上。因此 macOS 不再依赖 CI 构建：
+#   - arm64 二进制：使用仓库内置的 markdown授课/tools/md2doc/md2doc（本地构建提交）
+#   - Intel (x64)：不提供预编译（纯 Python 工具，Intel Mac 双击 md2doc.command
+#     或执行 python3 md2doc.py 即可，无需任何依赖）
+#   仅 Windows exe 由 CI 构建（Windows runner 排队可接受）。
 #
 # 触发方式：
-#   git tag v2.0.1 && git push origin v2.0.1
+#   git tag v2.0.2 && git push origin v2.0.2
 
 on:
   push:
@@ -14,25 +22,10 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
-    name: 构建 ${{ matrix.label }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            label: Windows x64
-            name: md2doc-windows
-            asset: md2doc-windows-x64.exe
-          - os: macos-13
-            label: macOS Intel (x64)
-            name: md2doc
-            asset: md2doc-macos-x64
-          - os: macos-14
-            label: macOS Apple Silicon (arm64)
-            name: md2doc
-            asset: md2doc-macos-arm64
-    runs-on: ${{ matrix.os }}
+  build-windows:
+    name: 构建 Windows x64 exe
+    runs-on: windows-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -48,37 +41,42 @@ jobs:
         shell: bash
         run: cp "markdown授课（Windows7）/tools/md2doc/md2doc.py" md2doc.py
 
-      - name: 打包可执行文件
-        run: pyinstaller --onefile --windowed --clean --name ${{ matrix.name }} md2doc.py
+      - name: 打包 exe
+        run: pyinstaller --onefile --windowed --clean --name md2doc-windows md2doc.py
 
       - name: 重命名为统一资产名
         shell: bash
-        run: |
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            mv "dist/${{ matrix.name }}.exe" "dist/${{ matrix.asset }}"
-          else
-            mv "dist/${{ matrix.name }}" "dist/${{ matrix.asset }}"
-          fi
-          ls -lh dist/
+        run: mv dist/md2doc-windows.exe dist/md2doc-windows-x64.exe
 
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.asset }}
-          path: dist/${{ matrix.asset }}
+          name: md2doc-windows-x64.exe
+          path: dist/md2doc-windows-x64.exe
           if-no-files-found: error
 
   release:
     name: 发布 Releases
-    needs: build
+    needs: build-windows
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - name: 汇总全部构建产物
+      - uses: actions/checkout@v4
+
+      # macOS arm64：直接使用仓库内置的本地构建二进制，避免 macOS runner 排队
+      - name: 准备 macOS arm64 二进制
+        shell: bash
+        run: |
+          mkdir -p assets
+          chmod +x "markdown授课/tools/md2doc/md2doc"
+          cp "markdown授课/tools/md2doc/md2doc" assets/md2doc-macos-arm64
+
+      - name: 下载 Windows 构建产物
         uses: actions/download-artifact@v4
         with:
+          name: md2doc-windows-x64.exe
           path: assets
-          merge-multiple: true
 
       - name: 生成 SHA256 校验和
         run: |
@@ -105,10 +103,21 @@ jobs:
             | 平台 | 文件 | 说明 |
             | ---- | ---- | ---- |
             | **Windows 7 / 10 / 11**（x64） | `md2doc-windows-x64.exe` | 双击运行图形界面；或命令行 `md2doc-windows-x64.exe 输入.md` |
-            | **macOS**（Apple Silicon） | `md2doc-macos-arm64` | 双击运行；或在终端 `chmod +x md2doc-macos-arm64` 后使用 |
-            | **macOS**（Intel） | `md2doc-macos-x64` | 同上 |
+            | **macOS**（Apple Silicon，M 系列） | `md2doc-macos-arm64` | 双击运行；或在终端 `chmod +x md2doc-macos-arm64` 后使用 |
+            | **macOS**（Intel） | 无需下载 | 双击仓库 `markdown授课/tools/md2doc/md2doc.command` 即可（纯 Python，系统自带运行环境） |
 
             > 所有文件 SHA256 校验和见 `SHA256SUMS.txt`。
+
+            ### ⚠️ 关于 macOS Intel 版本
+
+            GitHub Actions 的 Intel macOS 免费构建队列极慢（排队数小时），且本工具为**纯 Python 标准库**实现，
+            Intel Mac 用户无需预编译包：
+            ```bash
+            # 方式一：双击 tools/md2doc/md2doc.command（自动用系统 Python 打开图形界面）
+            # 方式二：命令行转换
+            python3 md2doc.py 输入.md [输出.docx]
+            python3 md2doc.py --dir 文件夹
+            ```
 
             ### ✨ v2.0 相比老师原版的改进
 
@@ -119,32 +128,10 @@ jobs:
             - 🖥️ 图形界面 + 命令行 + 批量转换（`--dir 文件夹`）三种用法
             - 📖 开源可改：源码 `md2doc.py` 位于仓库 `tools/md2doc/`
 
-            ### 🚀 使用方法
-
-            **图形界面**：双击 exe / 二进制文件，选择 .md 文件 → 点击「开始转换」。
-
-            **命令行**：
-            ```bash
-            md2doc-windows-x64.exe 输入.md [输出.docx]   # 转换单个文件
-            md2doc-windows-x64.exe --dir 文件夹           # 批量转换目录下所有 .md
-            ```
-
-            **支持的 front matter 文件头**（写在文档最前面，用 `---` 包裹）：
-            ```markdown
-            ---
-            title: 关于举办培训的通知
-            发文字号: XX办发〔2025〕3号
-            主送机关: 各科室、直属单位：
-            落款: XX办公室
-            成文日期: 2025年7月18日
-            ---
-            正文内容……
-            ```
-
             ### 🔗 相关链接
 
             - 源码：仓库 `markdown授课（Windows7）/tools/md2doc/md2doc.py`
-            - 网页在线转换器：教学网站「模块六 · AI 辅助」页面（浏览器内零依赖转换）
+            - 网页在线转换器：教学网站「模块五 · AI 辅助与数据分析 → AI 辅助写作」页面（浏览器内零依赖转换）
             - 构建配置：`.github/workflows/build-md2doc-exe.yml`
           draft: false
           prerelease: false

@@ -24,6 +24,9 @@
 ```
 md2doc.command
 ```
+> 💡 **Intel (x64) Mac 用户**：本工具是纯 Python 实现，无需预编译包——双击 `md2doc.command`
+> 或用系统自带的 Python 直接运行 `python3 md2doc.py` 即可，效果与预编译二进制完全一致。
+
 **命令行**：
 ```bash
 python3 md2doc.py 输入.md [输出.docx]   # 转换单个文件
