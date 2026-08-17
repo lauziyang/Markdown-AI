@@ -471,8 +471,8 @@ export function aiTableAnswer(md, question) {
       ? `按「${headers[numsCol]}」看，${worst.label} 最低，为 ${fmt(worst.val)}。依据：对表格该列全部数值排序取最小值。`
       : '该列没有可比较的数值。'
   }
-  // 问合计/总和
-  if (/合计|总和|一共|总共|总计/.test(q) && numsCol >= 0) {
+  // 问合计/总和（排除「一共多少行」这类行数问法）
+  if (/合计|总和|一共|总共|总计/.test(q) && !/多少行|几行|几条/.test(q) && numsCol >= 0) {
     const sum = rows.reduce((a, r) => a + (toNum(r[numsCol]) || 0), 0)
     return `「${headers[numsCol]}」列合计为 ${fmt(sum)}。依据：将该列全部数值相加（${rows.length} 行）。`
   }
@@ -481,20 +481,9 @@ export function aiTableAnswer(md, question) {
     const nums = rows.map((r) => toNum(r[numsCol])).filter((n) => n !== null)
     return `「${headers[numsCol]}」列平均值为 ${fmt(nums.reduce((a, b) => a + b, 0) / nums.length)}。依据：合计 ÷ 行数（${nums.length} 行）。`
   }
-  // 问有多少行/几个
-  if (/多少行|几行|多少条|几个/.test(q)) {
+  // 问有多少行/几个（排除"哪几行对不上"这类分析型问法）
+  if (/多少行|几行|多少条|几个/.test(q) && !/对不上|不匹配|勾稽|矛盾|毛利|销售额|成本|异常/.test(q)) {
     return `表格共有 ${rows.length} 行数据（不含表头）。依据：统计 | 分隔的数据行数。`
-  }
-  // 问占比/百分比
-  if (/占比|百分之|占多少|比例/.test(q) && numsCol >= 0) {
-    const total = rows.reduce((a, r) => a + (toNum(r[numsCol]) || 0), 0)
-    const parts = rows
-      .map((r) => ({ label: r[0], val: toNum(r[numsCol]) || 0 }))
-      .sort((a, b) => b.val - a.val)
-    if (total > 0) {
-      const top = parts[0]
-      return `「${headers[numsCol]}」总量为 ${fmt(total)}，其中 ${top.label} 占比最高，约 ${Math.round((top.val / total) * 100)}%（${fmt(top.val)}/${fmt(total)}）。依据：各值 ÷ 总量。`
-    }
   }
   // 问比较：A 比 B 多/少多少（跨门店 或 同门店跨月份）
   const cmpM = q.match(/(.+?)(?:比|vs|对比)(.+?)(多|少|高|低)(?:多少|几个)?[？?]?$/)
@@ -526,8 +515,8 @@ export function aiTableAnswer(md, question) {
       }
     }
   }
-  // 问环比/增长率（需要月份列）
-  if (/环比|增长|涨幅|下降|趋势/.test(q) && monthCol >= 0 && numsCol >= 0) {
+  // 问环比/增长率（需要月份列；「连续增长/下滑」走专门的连续分支）
+  if (/环比|增长|涨幅|下降|趋势/.test(q) && !/连续|逐月/.test(q) && monthCol >= 0 && numsCol >= 0) {
     const byMonth = {}
     rows.forEach((r) => {
       const mk = String(r[monthCol])
@@ -544,6 +533,82 @@ export function aiTableAnswer(md, question) {
           rate >= 0 ? `增长 ${fmt(rate)}%` : `下降 ${fmt(Math.abs(rate))}%`
         }。依据：两期合计相减 ÷ 上期。`
       }
+    }
+  }
+  // 问指定对象（门店/某月）的占比：如「北京6月销量占全部门店的比例」
+  if (/占比|占多少|比例|百分之/.test(q) && numsCol >= 0) {
+    const nameCol = headers.findIndex((h, ci) => colKind(headers, ci, rows) === 'text')
+    const name = nameCol >= 0 ? [...new Set(rows.map((r) => r[nameCol]))].find((n) => n && q.includes(n)) : null
+    const m = q.match(/(\d{1,2})月/)
+    const monthVal = m ? `2025-${String(Number(m[1])).padStart(2, '0')}` : null
+    if (name) {
+      const pool = monthVal ? rows.filter((r) => String(r[monthCol]) === monthVal) : rows
+      const total = pool.reduce((a, r) => a + (toNum(r[numsCol]) || 0), 0)
+      const val = pool.filter((r) => r[nameCol] === name).reduce((a, r) => a + (toNum(r[numsCol]) || 0), 0)
+      if (total > 0) {
+        return `${name}${monthVal ? ` ${monthVal}` : ''}的「${headers[numsCol]}」为 ${fmt(val)}，占${
+          monthVal ? '当月' : '全部'
+        }「${headers[numsCol]}」的 ${Math.round((val / total) * 100)}%（${fmt(val)} / ${fmt(total)}）。依据：${fmt(val)} ÷ 当月全部${headers[numsCol]}之和。`
+      }
+    }
+    // 无具体对象时的占比：回答总量与最高占比
+    const total = rows.reduce((a, r) => a + (toNum(r[numsCol]) || 0), 0)
+    if (total > 0) {
+      const top = rows
+        .map((r) => ({ label: r[0], val: toNum(r[numsCol]) || 0 }))
+        .sort((a, b) => b.val - a.val)[0]
+      return `「${headers[numsCol]}」总量为 ${fmt(total)}，其中 ${top.label} 占比最高，约 ${Math.round((top.val / total) * 100)}%（${fmt(top.val)}/${fmt(total)}）。依据：各值 ÷ 总量。`
+    }
+  }
+  // 问勾稽矛盾：毛利 与 销售额−成本 对不上的行
+  if (/对不上|不匹配|勾稽|矛盾|对账/.test(q) && /毛利|销售额|成本/.test(q)) {
+    const ciAmt = headers.findIndex((h) => /销售额|销售金额/.test(h))
+    const ciCost = headers.findIndex((h) => /成本/.test(h))
+    const ciGross = headers.findIndex((h) => /毛利/.test(h))
+    if (ciAmt >= 0 && ciCost >= 0 && ciGross >= 0) {
+      const bad = rows.filter((r) => {
+        const a = toNum(r[ciAmt])
+        const c = toNum(r[ciCost])
+        const g = toNum(r[ciGross])
+        return a !== null && c !== null && g !== null && Math.abs(g - (a - c)) > 1
+      })
+      if (bad.length) {
+        return `勾稽核对发现 ${bad.length} 行「毛利 ≠ 销售额 − 成本」：${bad
+          .map((r) => {
+            const a = toNum(r[ciAmt])
+            const c = toNum(r[ciCost])
+            return `${r[0]} ${r[1] || ''}（毛利 ${fmt(toNum(r[ciGross]))} ≠ ${fmt(a)} − ${fmt(c)} = ${fmt(a - c)}）`
+          })
+          .join('；')}。依据：逐行计算「销售额 − 成本」并与「毛利」比较。`
+      }
+      return '勾稽核对全部行：「毛利 = 销售额 − 成本」均成立，数据一致。'
+    }
+  }
+  // 问连续多期增长/下滑的门店：如「哪家门店连续三个月下滑」
+  if (/连续|逐月/.test(q) && /下滑|下降|减少|增长|上升|增加/.test(q) && monthCol >= 0) {
+    const amtCol = headers.findIndex((h, ci) => ci !== monthCol && ci !== 0 && colKind(headers, ci, rows) === 'amount')
+    if (amtCol >= 0) {
+      const nameCol = headers.findIndex((h, ci) => colKind(headers, ci, rows) === 'text')
+      const labelOf = (r) => (nameCol >= 0 ? r[nameCol] : r[0])
+      const names = [...new Set(rows.map(labelOf))]
+      const falling = []
+      const rising = []
+      names.forEach((n) => {
+        const vals = rows
+          .filter((r) => labelOf(r) === n)
+          .sort((a, b) => (String(a[monthCol]) < String(b[monthCol]) ? -1 : 1))
+          .map((r) => toNum(r[amtCol]) || 0)
+        if (vals.length >= 2 && vals.every((v, i) => i === 0 || v < vals[i - 1])) falling.push(n)
+        if (vals.length >= 2 && vals.every((v, i) => i === 0 || v > vals[i - 1])) rising.push(n)
+      })
+      const down = /下滑|下降|减少/.test(q)
+      if (down && falling.length) {
+        return `连续下滑的门店：${falling.join('、')}（各期「${headers[amtCol]}」逐期下降，依据：按月份排序后逐期比较）。`
+      }
+      if (!down && rising.length) {
+        return `连续增长的门店：${rising.join('、')}（各期「${headers[amtCol]}」逐期上升，依据：按月份排序后逐期比较）。`
+      }
+      return `未发现连续${down ? '下滑' : '增长'}的门店（各期「${headers[amtCol]}」存在波动，依据：逐门店按月比较）。`
     }
   }
   // 问某一行/某人
