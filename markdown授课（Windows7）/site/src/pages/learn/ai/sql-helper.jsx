@@ -49,24 +49,76 @@ const PITFALLS = [
    规范文档 vs 大白话 对比演示数据
    ============================================================ */
 
-/* ❌ 大白话提问：信息严重不足 */
-const SLOPPY_PROMPT = `帮我查一下上个月卖得好的商品，看看每家店怎么样`
+/* ❌ 大白话提问：像普通人那样聊天式描述（信息残缺、前后矛盾） */
+const SLOPPY_PROMPT = `老板让做6月的销售分析，帮我写个SQL。
+就是看看哪些店卖得好、哪些不行，还有卖得好的商品是啥。
+之前一直用MySQL，别的我也不懂，你看着弄就行。
+表名好像是sales啥的，具体列名我也记不清了，
+好像有个销量还有个金额吧。具体的你上数据库里看看就知道了。
+对了，要按门店和商品分类统计，上个月的环比也想要。
+先随便给我个能跑的，不行咱再改。`
 
-/* ❌ AI 因信息不足给出的「猜测式」回应 */
-const SLOPPY_SQL = `-- ⚠️ 信息不足，以下为 AI 猜测，请核对后再用
+/* ❌ AI 面对大白话只能「猜」的回应 */
+const SLOPPY_SQL = `-- ⚠️ 检测到 4 处信息缺失，以下均为猜测，请核对后再用
 
--- 猜测1：表名/列名不确定，先假设存在 sales 表
-SELECT 商品, 销量
+-- 猜测1：表名不确定 → 假设为 sales
+-- 猜测2：列名不确定 → 假设存在 门店 / 销量 / 销售额
+-- 猜测3：需求冲突（"6月" vs "上个月"）→ 默认取 2025-06
+-- 猜测4："卖得好"无判断标准 → 默认按销量 Top 10
+
+SELECT 门店, 销量, 销售额
 FROM sales
-WHERE 月份 = '2025-05'
+WHERE 月份 = '2025-06'
 ORDER BY 销量 DESC
 LIMIT 10;
 
--- ⚠️ 猜测2：没有外键关系，无法关联门店表
---   「每家店怎么样」——做不到
--- ⚠️ 猜测3：不知道「卖得好」的判断标准
---   （按销量？按销售额？Top 几？）只能默认 LIMIT 10
--- ⚠️ 猜测4：数据库类型未知，方言写法可能不对`
+-- ⚠️ 无法按「商品分类」统计（不知道商品表名与关联键）
+-- ⚠️ 无法算「环比」（没说明与哪一期对比、按什么维度）
+-- ⚠️ "上数据库里看看"——AI 无法自己去看库，只等你的表结构`
+
+/* ❌ Word 文件提问：把需求写进 .docx 发给 AI（结构在解析中丢失） */
+const WORD_DOC = `（这是用户上传的「销售分析需求.docx」，AI 解析后看到的内容）
+
+销售分析需求
+
+一、总体要求
+6 月的销售数据分析，重点看门店表现和商品表现。
+
+二、数据范围
+（此处原本是 Word 表格，解析后对齐信息丢失：）
+门店 | 销量 | 金额
+上海 | 1450 | 435万
+北京 | 1200 | 360万
+
+三、对比要求
+要跟上个月比，环比增长率写清楚。
+（批注：蓝色字体，原为批注内容，已混入正文）
+
+四、输出
+SQL 查询，MySQL。`
+
+/* ❌ AI 解析 Word 的过程 + 残缺结果 */
+const WORD_PARSE = `⚠️ 收到二进制文件「销售分析需求.docx」
+
+解析过程：
+1. 解压 .docx（本质是 zip 包）读取 document.xml…
+2. ⚠️ Word 表格转纯文本：表头与数据的对齐关系丢失
+3. ⚠️ 标题层级丢失：一/二/三 全部变成普通段落
+4. ⚠️ 混入 2 处批注（修订）内容，无法区分正文与批注
+5. ⚠️ 1 张截图无法解析，内容为空占位
+
+→ 结论：文档「有内容但没结构」，AI 只能提取零散关键词，
+  表结构、对比期、维度这些关键信息全部缺失。`
+
+const WORD_SQL = `-- ⚠️ 基于 Word 文档解析结果生成（结构信息已丢失）
+
+-- 猜测1：表名 → 文档里只找到「销售」字样，假设 sales
+-- 猜测2：列名 → 正文表格转纯文本后无法确认字段
+-- 猜测3：「跟上个月比」→ 不知道对比期与维度
+-- ⚠️ 无法完成：门店/商品维度、环比、批注中提到的补充需求
+
+SELECT * FROM sales LIMIT 100;
+-- ⚠️ 只能先给全表查询，字段和逻辑需要你人工补全后再跑`
 
 /* ✅ 规范提示词文档：结构完整、逻辑严谨 */
 const PRO_DOC = `# SQL 查询需求说明书
@@ -237,13 +289,21 @@ FROM with_share w
 LEFT JOIN top_product t ON t.类别 = w.类别 AND t.rn = 1
 ORDER BY w.销售占比 DESC;`
 
-/* 两种提问方式的对比表 */
+/* 三种提问方式的对比表 */
 const PROMPT_CMP = [
-  ['表结构信息', '缺失 → AI 只能猜列名表名', '三表完整结构 + 外键关系 + 字段说明'],
-  ['业务背景', '无 → 无法判断「卖得好」的标准', '背景清楚 → 指标可精确定义'],
-  ['需求粒度', '一句话 → 只能生成单条简单查询', '5 个具体需求 + 边界要求（除零/精度）'],
-  ['输出规范', '无 → 方言、格式随缘', '明确 MySQL 8.0 + CTE + 注释要求'],
-  ['生成结果', '7 行，含 4 处「猜测」', '90 行：CTE + 窗口函数 + JOIN，可直接运行'],
+  ['信息形态', '聊天式口语，残缺且前后矛盾', '二进制 .docx，有内容但结构在解析中丢失', '纯文本 Markdown，结构完整、零损耗'],
+  ['表结构信息', '缺失 → AI 只能猜列名表名', '文档没写字段 → 只能从正文猜表名', '三表完整结构 + 外键关系 + 字段说明'],
+  ['业务背景', '无 → 无法判断「卖得好」的标准', '批注/截图混入，正文与批注分不清', '背景清楚 → 指标可精确定义'],
+  ['需求粒度', '零散几句 → 单条简单查询', '表格对齐丢失 → 维度信息缺失', '5 个具体需求 + 边界要求（除零/精度）'],
+  ['AI 解析成本', '无解析，全靠「猜」', '解压 zip + 丢格式 + 混批注', '纯文本直接读取，零解析损耗'],
+  ['生成结果', '10 行，含 4 处「猜测」', '全表查询兜底，逻辑无法完成', '90 行：CTE + 窗口函数 + JOIN，可直接运行'],
+]
+
+/* 对比模式的元信息 */
+const CMP_MODES = [
+  { id: 'sloppy', icon: '💬', label: '大白话提问', color: '#e11d48', docLabel: '喂给 AI 的大白话', sqlLabel: 'AI 生成的 SQL（10 行 · 4 处猜测）' },
+  { id: 'word', icon: '📄', label: 'Word 文件提问', color: '#d97706', docLabel: 'AI 解析 Word 后的内容', sqlLabel: 'AI 生成的 SQL（结构丢失 · 兜底输出）' },
+  { id: 'pro', icon: '✅', label: '规范文档提问', color: 'var(--ok)', docLabel: '喂给 AI 的规范文档', sqlLabel: 'AI 生成的 SQL（90 行 · CTE + 窗口函数）' },
 ]
 
 export default function SqlHelper() {
@@ -273,9 +333,12 @@ export default function SqlHelper() {
     if (genBusy) return
     setGenBusy(true)
     setMode(m)
-    setDocText(m === 'pro' ? PRO_DOC : SLOPPY_PROMPT)
+    // 左侧提示词区：大白话 / Word 解析结果 / 规范文档
+    if (m === 'pro') setDocText(PRO_DOC)
+    else if (m === 'word') setDocText(WORD_PARSE + '\n\n' + WORD_DOC)
+    else setDocText(SLOPPY_PROMPT)
     setSqlOut('')
-    await simulateStream(m === 'pro' ? PRO_SQL : SLOPPY_SQL, (c) => setSqlOut(c), 10)
+    await simulateStream(m === 'pro' ? PRO_SQL : m === 'word' ? WORD_SQL : SLOPPY_SQL, (c) => setSqlOut(c), 10)
     setGenBusy(false)
     if (m === 'pro') setProGenerated(true)
   }
@@ -371,28 +434,33 @@ export default function SqlHelper() {
         </Callout>
       </Section>
 
-      <Section num={4} title="同样的需求：大白话 vs 规范文档">
-        <Callout type="info" title="同一个需求，两种提问方式">
+      <Section num={4} title="同样的需求：三种提问方式">
+        <Callout type="info" title="同一个需求，三种喂法">
           前面我们用一句话生成 SQL（快速但粗糙）。如果要让 AI 生成<b>几十行、可直接运行的复杂查询</b>，
-          必须给它一份<b>规范、逻辑严谨的 Markdown 需求文档</b>——包含角色、表结构、业务背景、需求清单和输出要求。
-          下面演示：<b>大白话提问</b>（信息不足 → AI 只能猜）与<b>规范文档提问</b>（信息完整 → AI 输出 90 行高质量 SQL）的差距。
+          提问方式决定了结果质量。下面对比三种方式：<b>💬 大白话</b>（信息残缺 → AI 只能猜）、
+          <b>📄 Word 文件</b>（有内容但结构在解析中丢失）、<b>✅ 规范 Markdown 文档</b>（信息完整 → AI 输出 90 行高质量 SQL）。
         </Callout>
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', margin: '14px 0 12px' }}>
-          <button className={`btn btn-sm ${mode === 'sloppy' ? '' : ''}`} style={mode === 'sloppy' ? { borderColor: '#e11d48', color: '#e11d48' } : undefined} onClick={() => runCompare('sloppy')} disabled={genBusy}>
-            ❌ 用大白话提问
-          </button>
-          <button className={`btn btn-sm ${mode === 'pro' ? 'btn-primary' : ''}`} onClick={() => runCompare('pro')} disabled={genBusy}>
-            ✅ 用规范文档提问
-          </button>
+          {CMP_MODES.map((m) => (
+            <button
+              key={m.id}
+              className="btn btn-sm"
+              style={mode === m.id ? { borderColor: m.color, color: m.color, fontWeight: 800 } : undefined}
+              onClick={() => runCompare(m.id)}
+              disabled={genBusy}
+            >
+              {m.icon} {m.label}
+            </button>
+          ))}
           {genBusy && <span className="chip">⏳ AI 生成中…</span>}
         </div>
 
         <div className="grid-2">
-          {/* 左侧：喂给 AI 的提示词原文 */}
+          {/* 左侧：喂给 AI 的内容 */}
           <div>
             <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 6, color: 'var(--text-soft)' }}>
-              📄 喂给 AI 的提示词（{mode === 'pro' ? '规范文档' : '大白话'}）
+              📄 {CMP_MODES.find((m) => m.id === mode).docLabel}
             </div>
             <pre
               style={{
@@ -408,7 +476,7 @@ export default function SqlHelper() {
           {/* 右侧：AI 生成的 SQL */}
           <div>
             <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 6, color: mode === 'pro' ? 'var(--ok)' : '#e11d48' }}>
-              🤖 AI 生成的 SQL（{mode === 'pro' ? '90 行 · CTE + 窗口函数' : '7 行 · 含 4 处猜测'}）
+              🤖 {CMP_MODES.find((m) => m.id === mode).sqlLabel}
             </div>
             <pre
               style={{
@@ -417,7 +485,7 @@ export default function SqlHelper() {
                 overflow: 'auto', maxHeight: 460, whiteSpace: 'pre-wrap',
               }}
             >
-              {sqlOut || '点击上方按钮，看 AI 在这两种提问下的不同表现…'}
+              {sqlOut || '点击上方按钮，看 AI 在三种提问下的不同表现…'}
             </pre>
             {sqlOut && <button className="btn btn-sm" style={{ marginTop: 8 }} onClick={() => copyText(sqlOut)}>📋 复制 SQL</button>}
           </div>
@@ -425,14 +493,15 @@ export default function SqlHelper() {
 
         {/* 对比表 */}
         <div className="card" style={{ padding: '16px 18px', marginTop: 14 }}>
-          <b style={{ display: 'block', marginBottom: 10 }}>📊 两种提问方式的差距</b>
+          <b style={{ display: 'block', marginBottom: 10 }}>📊 三种提问方式的差距</b>
           <div style={{ overflowX: 'auto' }}>
-            <table className="cmp-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5, minWidth: 560 }}>
+            <table className="cmp-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5, minWidth: 720 }}>
               <thead>
                 <tr>
                   <th style={{ textAlign: 'left', padding: '8px 10px', borderBottom: '2px solid var(--border)' }}>维度</th>
-                  <th style={{ textAlign: 'left', padding: '8px 10px', borderBottom: '2px solid var(--border)' }}>❌ 大白话</th>
-                  <th style={{ textAlign: 'left', padding: '8px 10px', borderBottom: '2px solid var(--border)' }}>✅ 规范文档</th>
+                  <th style={{ textAlign: 'left', padding: '8px 10px', borderBottom: '2px solid var(--border)' }}>💬 大白话</th>
+                  <th style={{ textAlign: 'left', padding: '8px 10px', borderBottom: '2px solid var(--border)' }}>📄 Word 文件</th>
+                  <th style={{ textAlign: 'left', padding: '8px 10px', borderBottom: '2px solid var(--border)' }}>✅ 规范 Markdown</th>
                 </tr>
               </thead>
               <tbody>
@@ -440,14 +509,16 @@ export default function SqlHelper() {
                   <tr key={r[0]}>
                     <td style={{ padding: '7px 10px', borderBottom: '1px solid var(--border-soft, #eee)', fontWeight: 700, whiteSpace: 'nowrap' }}>{r[0]}</td>
                     <td style={{ padding: '7px 10px', borderBottom: '1px solid var(--border-soft, #eee)', color: '#e11d48' }}>{r[1]}</td>
-                    <td style={{ padding: '7px 10px', borderBottom: '1px solid var(--border-soft, #eee)', color: 'var(--ok)' }}>{r[2]}</td>
+                    <td style={{ padding: '7px 10px', borderBottom: '1px solid var(--border-soft, #eee)', color: '#d97706' }}>{r[2]}</td>
+                    <td style={{ padding: '7px 10px', borderBottom: '1px solid var(--border-soft, #eee)', color: 'var(--ok)' }}>{r[3]}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
           <Callout type="tip" style={{ marginTop: 12 }}>
-            <b>核心结论：</b>AI 的能力取决于你给它的信息——<b>「规范文档式提问」把写 SQL 从「碰运气」变成「按图施工」</b>。
+            <b>核心结论：</b>AI 的能力取决于你给它的信息——大白话「信息残缺靠猜」、Word「有内容但结构丢失」，
+            <b>Markdown 规范文档「零损耗、结构完整」</b>，把写 SQL 从「碰运气」变成「按图施工」。
             真实的 AI 数据工作流中，把表结构文档沉淀成团队共享的「提示词模板」，人人都能稳定地让 AI 产出高质量查询。
           </Callout>
         </div>
