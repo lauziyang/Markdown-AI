@@ -7,6 +7,14 @@ node_modules/
 
 # Build output
 dist/
+# 例外：Windows 7 免安装单文件版（双击即用的成品）需要入库
+!markdown授课（Windows7）/site/dist/
+!markdown授课（Windows7）/site/dist/index.html
+
+# PyInstaller 构建产物
+*.spec
+build/
+__pycache__/
 
 # Logs
 *.log

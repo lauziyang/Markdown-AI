@@ -2,6 +2,35 @@ import React, { useEffect, useState } from 'react'
 import { LessonPage, Section, Callout, Exercise, useLessonComplete } from '../../../components/ui.jsx'
 import MdEditor from '../../../components/MdEditor.jsx'
 import { simulateStream, aiOutline, aiPolish, estimateHandwriteTime, estimateAIWriteTime } from '../../../lib/ai.js'
+import { downloadDocx } from '../../../lib/docx.js'
+
+/* 在线转换器的预置示例：一份「公文风」Markdown */
+const DOC_SAMPLE = `---
+title: 关于举办 Markdown 写作培训的通知
+发文字号: XX办发〔2025〕3号
+主送机关: 各科室、直属单位：
+落款: XX办公室
+成文日期: 2025年7月18日
+---
+为提升全体人员 Markdown 写作能力，现定于本周五举办专题培训，有关事项通知如下。
+
+## 一、培训安排
+
+| 时间 | 内容 | 主讲 |
+| ---- | ---- | ---- |
+| 09:00 | Markdown 基础语法 | 张老师 |
+| 10:30 | AI 辅助写作实战 | 李老师 |
+
+## 二、注意事项
+
+1. 请自带笔记本电脑，提前安装 **VS Code** 编辑器；
+2. 培训期间请保持安静，手机调至静音；
+3. 课后完成一篇 \`公文\` 格式的练习作业。
+
+> 提示：本文档由网页在线转换为公文 docx：标题小标宋二号、正文仿宋三号、行距 28.9pt、首行缩进 2 字符。
+
+特此通知。
+`
 
 /* 开场概览：AI 辅助写作的 4 个场景 */
 const CARDS = [
@@ -47,6 +76,7 @@ export default function Assistant() {
   const [active, setActive] = useState(0)
   const [topic, setTopic] = useState('')
   const [content, setContent] = useState('')
+  const [docText, setDocText] = useState(DOC_SAMPLE)
   const [generating, setGenerating] = useState(false)
   const [genStarted, setGenStarted] = useState(false)
   const [optPoints, setOptPoints] = useState([])
@@ -221,9 +251,15 @@ export default function Assistant() {
           <code>Markdown精讲交互式网站 - 实施方案（4+1结构）.md</code>，
           打开它就能看到网站是怎么被一步步设计出来的——这就是「AI + Markdown 写方案」的真实案例。
         </Callout>
-        <Callout type="info" title="配套工具：Markdown 转公文">
-          配套的「Markdown 转公文」小程序的 exe 文件由老师提供，统一放到项目根目录
-          <code>tools/md2doc/</code> 文件夹，网站会在此预留入口说明。
+        <Callout type="info" title="配套工具：Markdown 转公文（已就绪 ✅）">
+          仓库 <code>tools/md2doc/</code> 目录已内置「Markdown 转公文」工具，支持三种使用方式：
+          <ul style={{ margin: '8px 0 0', paddingLeft: 20, fontSize: 13.5, lineHeight: 1.9 }}>
+            <li><b>Windows 7 版</b>：双击 <code>tools/md2doc/md2doc.exe</code> 打开图形界面，选择 .md 文件即可生成公文 .docx；</li>
+            <li><b>macOS 版</b>：双击 <code>tools/md2doc/md2doc.command</code>（或运行 <code>tools/md2doc/md2doc.py</code>）；</li>
+            <li><b>网页在线转换</b>：直接使用下方「在线转换器」，无需安装任何软件。</li>
+          </ul>
+          工具直接生成符合《党政机关公文格式 GB/T 9704-2012》的 .docx：
+          标题小标宋二号、正文仿宋_GB2312 三号、首行缩进 2 字符、行距 28.9pt，无需安装 Microsoft Word。
         </Callout>
         <div className="demo-frame" style={{ marginTop: 14 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -231,10 +267,45 @@ export default function Assistant() {
             <div style={{ flex: 1, minWidth: 220 }}>
               <b>工具入口 · Markdown 转公文</b>
               <div style={{ fontSize: 13, color: 'var(--text-faint)', marginTop: 2 }}>
-                老师放入 exe 后即可从这里启动，路径：<code>tools/md2doc/</code>
+                本地工具路径：<code>tools/md2doc/</code>（exe / command / py 三选一）
               </div>
             </div>
-            <span className="chip">⏳ 等待老师提供 exe 文件</span>
+            <span className="chip chip-accent">✅ 工具已就绪</span>
+          </div>
+        </div>
+      </Section>
+
+      <Section num={5} title="在线体验：Markdown → 公文 docx">
+        <div className="card" style={{ padding: '16px 18px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
+            <b>✍️ 粘贴 Markdown，一键生成公文 Word 文档</b>
+            <button
+              className="btn btn-sm btn-primary"
+              onClick={() => downloadDocx(docText, '公文.docx')}
+              disabled={!docText.trim()}
+            >
+              ⬇️ 生成并下载 .docx
+            </button>
+          </div>
+          <textarea
+            value={docText}
+            onChange={(e) => setDocText(e.target.value)}
+            spellCheck={false}
+            style={{
+              width: '100%', minHeight: 300, boxSizing: 'border-box',
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+              fontSize: 13, lineHeight: 1.7, padding: 12, borderRadius: 10,
+              border: '1px solid var(--border, #d0d7de)', background: 'var(--bg-soft, #f6f8fa)',
+              color: 'var(--text)', resize: 'vertical',
+            }}
+          />
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10, fontSize: 12.5, color: 'var(--text-faint)' }}>
+            <span>支持：<code>---</code> 文件头（title/发文字号/主送机关/落款/成文日期）、# 标题、表格、列表、引用、代码块、**加粗**、*斜体*、`行内代码`</span>
+            <button className="btn btn-sm" onClick={() => setDocText(DOC_SAMPLE)} style={{ marginLeft: 'auto' }}>↺ 恢复示例</button>
+          </div>
+          <div style={{ fontSize: 12.5, color: 'var(--text-faint)', marginTop: 8 }}>
+            💡 转换完全在浏览器本地完成（零依赖、可离线），生成的 .docx 无需安装 Word 即可用 WPS / 在线 Office 打开；
+            需要批量转换或嵌入本地图片时，请使用本地 exe / command 工具。
           </div>
         </div>
       </Section>
