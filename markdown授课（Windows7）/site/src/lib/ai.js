@@ -345,34 +345,74 @@ function toNum(v) {
   return Number.isFinite(n) ? n : null
 }
 
-/** 表格统计摘要：行数 / 数值列合计、均值、最大最小、Top3 */
+/** 列类型识别：文本 / 月份 / 比率(%) / 单价 / 量额 */
+function colKind(headers, ci, rows) {
+  const h = headers[ci]
+  if (/月|month/i.test(h)) return 'month'
+  if (/率|占比|比例|%/.test(h)) return 'rate'
+  if (/单价|客单价|均价|人均|per|价/.test(h)) return 'unit'
+  if (rows.some((r) => toNum(r[ci]) !== null)) return 'amount'
+  return 'text'
+}
+
+/** 表格统计摘要：按列类型分别输出（量额列合计、单价列均值、比率列不求和）+ 门店聚合 Top */
 export function analyzeTable(md) {
   const { headers, rows } = parseMdTable(md)
   if (!headers.length) return '没有检测到表格。请先粘贴一张 Markdown 表格。'
-  const parts = [`共 ${rows.length} 行数据，列：${headers.join('、')}。`]
+  const monthCol = headers.findIndex((h) => /月|month/i.test(h))
+  const nameCols = headers
+    .map((h, ci) => ({ h, ci }))
+    .filter(({ ci }) => colKind(headers, ci, rows) === 'text')
+  const names = new Set(rows.map((r) => (nameCols[0] ? r[nameCols[0].ci] : r[0])))
+  const months = new Set(rows.map((r) => (monthCol >= 0 ? r[monthCol] : '—')))
+  const parts = []
+  parts.push(
+    `共 ${rows.length} 行数据 · ${names.size} 个${nameCols[0] ? headers[nameCols[0].ci] : '对象'}${monthCol >= 0 ? ` · ${months.size} 个时间期（${[...months].sort()[0]} ~ ${[...months].sort().pop()}）` : ''}。`
+  )
+  parts.push(`列：${headers.join('、')}。`)
+
+  const amountCols = []
   headers.forEach((h, ci) => {
+    const kind = colKind(headers, ci, rows)
     const nums = rows.map((r) => toNum(r[ci])).filter((n) => n !== null)
-    if (!nums.length) {
-      parts.push(`「${h}」为文本列，非重复值 ${new Set(rows.map((r) => r[ci])).size} 个。`)
+    if (kind === 'text') {
+      parts.push(`「${h}」文本列：${new Set(rows.map((r) => r[ci])).size} 个不同值。`)
       return
     }
-    const sum = nums.reduce((a, b) => a + b, 0)
-    const avg = sum / nums.length
+    if (!nums.length) return
+    if (kind === 'month') return
     const max = Math.max(...nums)
     const min = Math.min(...nums)
-    parts.push(
-      `「${h}」数值列：合计 ${fmt(sum)}，均值 ${fmt(avg)}，最大 ${fmt(max)}，最小 ${fmt(min)}。`
-    )
+    const avg = nums.reduce((a, b) => a + b, 0) / nums.length
+    if (kind === 'rate') {
+      parts.push(`「${h}」比率列：均值 ${fmt(avg)}%，最好 ${fmt(max)}%，最差 ${fmt(min)}%（比率不做合计）。`)
+    } else if (kind === 'unit') {
+      parts.push(`「${h}」单价列：均值 ${fmt(avg)}，最大 ${fmt(max)}，最小 ${fmt(min)}（单价取均值，不做合计）。`)
+    } else {
+      amountCols.push(ci)
+      const sum = nums.reduce((a, b) => a + b, 0)
+      parts.push(`「${h}」量额列：合计 ${fmt(sum)}，均值 ${fmt(avg)}，最大 ${fmt(max)}，最小 ${fmt(min)}。`)
+    }
   })
-  // Top3（用第一列文本 + 第一数值列）
-  const firstNumCol = headers.findIndex((_, ci) => rows.some((r) => toNum(r[ci]) !== null))
-  if (firstNumCol >= 0 && rows.length > 2) {
-    const top = [...rows]
-      .map((r) => ({ label: r[0], val: toNum(r[firstNumCol]) }))
-      .filter((x) => x.val !== null)
+
+  // Top 排名：按名称列聚合第一个量额列，避免同门店多行重复占榜
+  if (amountCols.length && nameCols.length && rows.length > 2) {
+    const col = amountCols[0]
+    const byName = {}
+    rows.forEach((r) => {
+      const label = r[nameCols[0].ci]
+      const v = toNum(r[col])
+      if (v !== null) byName[label] = (byName[label] || 0) + v
+    })
+    const sorted = Object.entries(byName)
+      .map(([label, val]) => ({ label, val }))
       .sort((a, b) => b.val - a.val)
-      .slice(0, 3)
-    if (top.length) parts.push(`按「${headers[firstNumCol]}」排名前三：${top.map((t) => `${t.label}（${fmt(t.val)}）`).join('、')}。`)
+    parts.push(
+      `按「${headers[nameCols[0].ci]}」聚合「${headers[col]}」排名前三：${sorted
+        .slice(0, 3)
+        .map((t) => `${t.label}（${fmt(t.val)}）`)
+        .join('、')}。`
+    )
   }
   return parts.join('\n')
 }
@@ -387,11 +427,29 @@ export function aiTableAnswer(md, question) {
   if (!headers.length) return '没有检测到表格，请先粘贴一张 Markdown 表格再提问。'
   const q = (question || '').trim()
   if (!q) return '请先输入一个问题，例如「哪个月销量最高？」'
-  // 数值列排除月份列（2025-05 会被解析成数字）和第一列（通常是文本名）
+  // 列选择：优先「量额列」；问题提到比率/单价列时改用对应列
   const monthCol = headers.findIndex((h) => /月|month/i.test(h))
-  const numsCol = headers.findIndex(
-    (_, ci) => ci !== monthCol && ci !== 0 && rows.some((r) => toNum(r[ci]) !== null)
-  )
+  const pickCol = () => {
+    // 问题里提到具体列名 → 用那一列
+    const named = headers.findIndex((h, ci) => {
+      if (ci === monthCol || ci === 0) return false
+      const short = h.replace(/[()（）、%万元]/g, '')
+      return q.includes(short) || short.includes(q.replace(/[？?了哪家的]/g, ''))
+    })
+    if (named > 0) return named
+    // 按语义优先：率 → 比率列；单价 → 单价列；否则 → 第一个量额列
+    if (/达标率|占比|率|百分比/.test(q)) {
+      const rateCol = headers.findIndex((h, ci) => colKind(headers, ci, rows) === 'rate')
+      if (rateCol >= 0) return rateCol
+    }
+    if (/客单价|单价|均价/.test(q)) {
+      const unitCol = headers.findIndex((h, ci) => colKind(headers, ci, rows) === 'unit')
+      if (unitCol >= 0) return unitCol
+    }
+    const amtCol = headers.findIndex((h, ci) => ci !== monthCol && ci !== 0 && colKind(headers, ci, rows) === 'amount')
+    return amtCol
+  }
+  const numsCol = pickCol()
   const firstCol = 0
   // 问最大/最高
   if (/最大|最高|最多|冠军|第一/.test(q) && numsCol >= 0) {
@@ -505,17 +563,20 @@ export function analyzeTrend(md) {
   const { headers, rows } = parseMdTable(md)
   if (!headers.length) return '没有检测到表格。'
   const monthCol = headers.findIndex((h) => /月|month/i.test(h))
+  // 名称列：第一个文本列（门店/商品名）
+  const nameCol = headers.findIndex((h, ci) => colKind(headers, ci, rows) === 'text')
+  const labelOf = (r) => (nameCol >= 0 ? r[nameCol] : r[0])
   const parts = []
-  // 1) 占比：选「第一个真实数值列」（跳过月份列，月份如 2025-05 会被解析成数字）
-  const firstNum = headers.findIndex(
-    (_, ci) => ci !== monthCol && ci !== 0 && rows.some((r) => toNum(r[ci]) !== null)
+  // 1) 占比：选「第一个量额列」（跳过月份、比率、单价列）
+  const firstAmt = headers.findIndex(
+    (_, ci) => ci !== monthCol && colKind(headers, ci, rows) === 'amount'
   )
-  if (firstNum >= 0) {
-    // 按第一列分组求和（避免同一门店多行重复计）
+  if (firstAmt >= 0) {
+    // 按名称列聚合求和（避免同一门店多行重复计）
     const byLabel = {}
     rows.forEach((r) => {
-      const key = r[0]
-      byLabel[key] = (byLabel[key] || 0) + (toNum(r[firstNum]) || 0)
+      const key = labelOf(r)
+      byLabel[key] = (byLabel[key] || 0) + (toNum(r[firstAmt]) || 0)
     })
     const total = Object.values(byLabel).reduce((a, b) => a + b, 0)
     if (total > 0) {
@@ -524,18 +585,22 @@ export function analyzeTrend(md) {
         .sort((a, b) => b.val - a.val)
       const top = sorted[0]
       const top3 = (sorted[0]?.val || 0) + (sorted[1]?.val || 0) + (sorted[2]?.val || 0)
-      parts.push(`【占比】按「${headers[firstNum]}」计（按${headers[0]}汇总），${top.label} 占比最高 ${Math.round((top.val / total) * 100)}%，Top3 合计约 ${Math.round((top3 / total) * 100)}%。`)
+      parts.push(`【占比】按「${headers[firstAmt]}」计（按${headers[nameCol >= 0 ? nameCol : 0]}汇总），${top.label} 占比最高 ${Math.round((top.val / total) * 100)}%，Top3 合计约 ${Math.round((top3 / total) * 100)}%。`)
     }
   }
-  // 2) 环比趋势（有月份列时）
+  // 2) 环比趋势（有月份列时；只累计量额列，排除比率/单价）
   if (monthCol >= 0) {
+    const amtCols = headers
+      .map((h, ci) => ({ h, ci }))
+      .filter(({ ci }) => colKind(headers, ci, rows) === 'amount')
     const byMonth = {}
     rows.forEach((r) => {
       const mk = String(r[monthCol])
       byMonth[mk] = byMonth[mk] || { total: 0, rows: [] }
       byMonth[mk].rows.push(r)
-      headers.forEach((h, ci) => {
-        if (ci !== monthCol && ci !== 0 && toNum(r[ci]) !== null) byMonth[mk].total += toNum(r[ci])
+      amtCols.forEach(({ ci }) => {
+        const v = toNum(r[ci])
+        if (v !== null) byMonth[mk].total += v
       })
     })
     const months = Object.keys(byMonth).sort()
@@ -548,23 +613,24 @@ export function analyzeTrend(md) {
       }
       const last = rates[rates.length - 1]
       if (last) {
-        parts.push(`【环比】${last.to} 较 ${last.from} 整体 ${last.rate >= 0 ? `增长 ${fmt(last.rate)}%` : `下降 ${fmt(Math.abs(last.rate))}%`}（按各数值列合计）。`)
+        parts.push(`【环比】${last.to} 较 ${last.from} 整体 ${last.rate >= 0 ? `增长 ${fmt(last.rate)}%` : `下降 ${fmt(Math.abs(last.rate))}%`}（按${headers[firstAmt] ?? '量额'}等量额列合计，比率列不参与）。`)
       }
-      // 连续增长/下滑的门店
-      const names = [...new Set(rows.map((r) => r[0]))]
-      const losers = []
-      const winners = []
-      names.forEach((name) => {
-        const series = months.map((mk) =>
-          (byMonth[mk].rows.find((r) => r[0] === name) || []).reduce((s, r) => s, 0) ||
-          rows.find((r) => r[0] === name && r[monthCol] === mk)
-        ).filter(Boolean)
-        const vals = series.map((r) => headers.reduce((s, h, ci) => (ci !== monthCol && ci !== 0 && toNum(r[ci]) !== null ? s + toNum(r[ci]) : s), 0))
-        if (vals.length >= 2 && vals.every((v, i) => i === 0 || v < vals[i - 1])) losers.push(name)
-        if (vals.length >= 2 && vals.every((v, i) => i === 0 || v > vals[i - 1])) winners.push(name)
-      })
-      if (winners.length) parts.push(`【趋势】${winners.join('、')} 连续增长，势头良好。`)
-      if (losers.length) parts.push(`【风险】${losers.join('、')} 连续下滑，建议关注（依据：各期数值逐期下降）。`)
+      // 连续增长/下滑的门店（用第一个量额列）
+      if (firstAmt >= 0) {
+        const names = [...new Set(rows.map(labelOf))]
+        const losers = []
+        const winners = []
+        names.forEach((name) => {
+          const vals = months
+            .map((mk) => byMonth[mk].rows.find((r) => labelOf(r) === name))
+            .filter(Boolean)
+            .map((r) => toNum(r[firstAmt]) || 0)
+          if (vals.length >= 2 && vals.every((v, i) => i === 0 || v < vals[i - 1])) losers.push(name)
+          if (vals.length >= 2 && vals.every((v, i) => i === 0 || v > vals[i - 1])) winners.push(name)
+        })
+        if (winners.length) parts.push(`【趋势】${winners.join('、')} 连续增长，势头良好。`)
+        if (losers.length) parts.push(`【风险】${losers.join('、')} 连续下滑，建议关注（依据：各期「${headers[firstAmt]}」逐期下降）。`)
+      }
     }
   }
   if (!parts.length) parts.push('表格缺少月份列或多期数据，无法做趋势分析；占比分析需要数值列。')
@@ -587,8 +653,23 @@ export function detectTableAnomalies(md) {
   if (dups.length) findings.push({ level: 'warn', text: `发现 ${dups.length} 组重复行（每组 ${dups[0][1]} 次），建议去重。` })
   // 3) 数值异常（> 3 倍均值）
   headers.forEach((h, ci) => {
+    const kind = colKind(headers, ci, rows)
     const nums = rows.map((r) => toNum(r[ci])).filter((n) => n !== null)
     if (nums.length < 3) return
+    // 3a) 比率列（达标率/占比）：超过 200% 或小于 0 直接判异常（业务语义）
+    if (kind === 'rate') {
+      const badRate = rows
+        .filter((r) => {
+          const v = toNum(r[ci])
+          return v !== null && (v > 200 || v < 0)
+        })
+        .map((r) => `${r[0]} ${r[1] || ''}（${fmt(toNum(r[ci]))}%）`)
+      if (badRate.length) {
+        findings.push({ level: 'error', text: `「${h}」比率列异常：${badRate.join('、')} 超出正常范围（0~200%），疑似数据错误（达标率正常应接近 100%）。` })
+      }
+      return
+    }
+    // 3b) 其他数值列：> 3 倍均值
     const avg = nums.reduce((a, b) => a + b, 0) / nums.length
     const outliers = rows
       .map((r, ri) => ({ label: r[0], val: toNum(r[ci]), ri }))
@@ -654,10 +735,10 @@ export function detectTableAnomalies(md) {
 export function mermaidSuggest(md, kind = 'bar') {
   const { headers, rows } = parseMdTable(md)
   if (!headers.length) return '```mermaid\n%% 没有检测到表格\n```'
-  // 数值列：排除月份列（2025-04 会被解析成 2025）与第一列（门店名等文本列）
+  // 数值列：优先「量额列」（销量/销售额…），其次单价/比率列；排除月份列（2025-04 会被解析成 2025）
   const monthCol = headers.findIndex((h) => /月|month/i.test(h))
   const valCol = headers.findIndex(
-    (_, ci) => ci !== monthCol && ci !== 0 && rows.some((r) => toNum(r[ci]) !== null)
+    (_, ci) => ci !== monthCol && ci !== 0 && colKind(headers, ci, rows) === 'amount'
   )
   if (valCol < 0) return '```mermaid\n%% 表格中没有数值列，无法生成图表\n```'
   // 名称列：第一个非数值、非月份的列（门店/商品名）
