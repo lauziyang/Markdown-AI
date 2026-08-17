@@ -36,6 +36,9 @@ const Toc = lazy(() => import('./pages/learn/advanced/toc.jsx'))
 // 模块五
 const Assistant = lazy(() => import('./pages/learn/ai/assistant.jsx'))
 const DataAnalyze = lazy(() => import('./pages/learn/ai/data-analyze.jsx'))
+const SqlHelper = lazy(() => import('./pages/learn/ai/sql-helper.jsx'))
+const SqlReport = lazy(() => import('./pages/learn/ai/sql-report.jsx'))
+const SqlRules = lazy(() => import('./pages/learn/ai/sql-rules.jsx'))
 const DocAnalyze = lazy(() => import('./pages/learn/ai/doc-analyze.jsx'))
 const Templates = lazy(() => import('./pages/learn/ai/templates.jsx'))
 
@@ -95,6 +98,9 @@ export default function App() {
 
         <Route path="/learn/ai/assistant" element={<Gate id="assistant"><Assistant /></Gate>} />
         <Route path="/learn/ai/data-analyze" element={<Gate id="data-analyze"><DataAnalyze /></Gate>} />
+        <Route path="/learn/ai/sql-helper" element={<Gate id="sql-helper"><SqlHelper /></Gate>} />
+        <Route path="/learn/ai/sql-report" element={<Gate id="sql-report"><SqlReport /></Gate>} />
+        <Route path="/learn/ai/sql-rules" element={<Gate id="sql-rules"><SqlRules /></Gate>} />
         <Route path="/learn/ai/doc-analyze" element={<Gate id="doc-analyze"><DocAnalyze /></Gate>} />
         <Route path="/learn/ai/templates" element={<Gate id="templates"><Templates /></Gate>} />
 

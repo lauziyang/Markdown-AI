@@ -36,8 +36,8 @@ export default function Home() {
           <Link to="/path" className="btn">🗺️ 查看学习路径</Link>
         </div>
         <div className="hero-meta" style={{ marginTop: 18 }}>
-          <span>📚 6 大模块 · 24 课</span>
-          <span>⏱️ 总时长约 300 分钟</span>
+          <span>📚 6 大模块 · 27 课</span>
+          <span>⏱️ 总时长约 340 分钟</span>
           <span>🔥 连续学习 {streak.count} 天</span>
           <span>🏆 已获徽章 {earnedBadges}/6</span>
         </div>

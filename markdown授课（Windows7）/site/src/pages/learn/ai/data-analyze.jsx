@@ -374,8 +374,8 @@ export default function DataAnalyze() {
           </p>
           {done && (
             <Callout type="tip">
-              <b>🎉 数据分析师！</b>你已经会用 AI 读表格了。下一课「文档智能分析」，
-              我们把分析能力用到整篇文档上——体检、摘要、翻译、出题。
+              <b>🎉 数据分析师！</b>你已经会用 AI 读表格了。下一课「让 AI 帮你写 SQL」——
+              学会用一句话让 AI 从数据库里取数。
             </Callout>
           )}
         </Exercise>

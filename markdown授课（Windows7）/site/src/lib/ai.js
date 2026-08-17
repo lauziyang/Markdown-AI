@@ -668,3 +668,170 @@ export function aiGenerateQuiz(md) {
   })
   return questions
 }
+
+/* ============================================================
+   v3 新增：AI + SQL 数据查询引擎（本地模拟 AI）
+   配套教学表：sales（门店 TEXT / 月份 TEXT / 销量 INT / 销售额 DECIMAL）
+   ============================================================ */
+
+/** 自然语言 → SQL（规则模拟，带逐行教学注释） */
+export function aiSql(question) {
+  const q = (question || '').trim()
+  if (!q) return '请先输入一个问题。'
+  const select = ['门店', '月份', '销量', '销售额']
+  const where = []
+  const parts = []
+  const notes = []
+
+  // 月份筛选
+  const m = q.match(/(\d{4})年(\d{1,2})月|(\d{1,2})月/)
+  if (m) {
+    const mon = m[1] ? `${m[1]}-${String(Number(m[2])).padStart(2, '0')}` : `2025-${String(Number(m[3])).padStart(2, '0')}`
+    where.push(`月份 = '${mon}'`)
+    notes.push(`识别到时间条件「${m[0]}」→ WHERE 月份 = '${mon}'`)
+  }
+
+  // 数值条件
+  const gt = q.match(/(大于|超过|高于|>)\s*(\d+)/)
+  const lt = q.match(/(小于|低于|<)\s*(\d+)/)
+  if (gt) { where.push(`销量 > ${gt[2]}`); notes.push(`识别到筛选条件「${gt[0]}」→ WHERE 销量 > ${gt[2]}`) }
+  if (lt) { where.push(`销量 < ${lt[2]}`); notes.push(`识别到筛选条件「${lt[0]}」→ WHERE 销量 < ${lt[2]}`) }
+
+  // 排序与 TopN（先识别"前 N / Top N / N 家门店"这类带数量的排名需求）
+  const topN = q.match(/前\s*(\d+)|Top\s*(\d+)|最多的\s*(\d+)|最高的\s*(\d+)|最少的\s*(\d+)|(\d+)\s*家/i)
+  const topNNum = topN ? Number(topN[1] || topN[2] || topN[3] || topN[4] || topN[5] || topN[6]) : null
+  const wantTopN = topNNum !== null && /最高|最大|最多|前|Top|最低|最小|最少|名/i.test(q) && !/平均|总|合计|SUM|AVG|数量|COUNT/.test(q)
+  if (wantTopN) notes.push(`识别到「前 ${topNNum}」→ 用排序 + LIMIT ${topNNum}，而不是 MAX/MIN 聚合`)
+
+  // 聚合（带数量的排名需求优先走排序，不走 MAX/MIN）
+  let aggExpr = null
+  let aggCol = null
+  if (/平均|均值|AVG/.test(q)) { aggExpr = 'AVG(销售额)'; aggCol = 'avg_sales'; notes.push('识别到「平均」→ 用 AVG() 聚合') }
+  else if (/总|合计|SUM|加总/.test(q)) { aggExpr = 'SUM(销售额)'; aggCol = 'total_sales'; notes.push('识别到「合计」→ 用 SUM() 聚合') }
+  else if (/多少条|几条|数量|COUNT|数一数/.test(q)) { aggExpr = 'COUNT(*)'; aggCol = 'cnt'; notes.push('识别到「数量」→ 用 COUNT(*) 统计行数') }
+  else if (!wantTopN && /最高|最大|最多|冠军|MAX/.test(q)) { aggExpr = 'MAX(销量)'; aggCol = 'max_sales'; notes.push('识别到「最高」→ 用 MAX() 聚合') }
+  else if (!wantTopN && /最低|最小|最少|MIN/.test(q)) { aggExpr = 'MIN(销量)'; aggCol = 'min_sales'; notes.push('识别到「最低」→ 用 MIN() 聚合') }
+
+  // 分组
+  const group = /按(.+?)(分组|统计|汇总|看)|每家门店|各门店|每个(.+?)(的)?/.exec(q)
+  let groupBy = null
+  if (group && /门店/.test(group[1] || '') || /每家门店|各门店/.test(q)) {
+    groupBy = '门店'
+    notes.push('识别到「按门店分组」→ GROUP BY 门店')
+  }
+
+  // 排序与 LIMIT
+  let orderBy = null
+  let limit = null
+  if (aggExpr && groupBy) {
+    orderBy = `${aggCol} DESC`
+    if (/最多|最高|前|Top/i.test(q)) { orderBy = `${aggCol} DESC`; notes.push('识别到「最多/最高」→ ORDER BY 结果降序') }
+    if (/最少|最低/.test(q)) { orderBy = `${aggCol} ASC`; notes.push('识别到「最少/最低」→ ORDER BY 结果升序') }
+    if (topNNum) { limit = topNNum; notes.push(`识别到「前 ${limit}」→ LIMIT ${limit}`) }
+  } else if (wantTopN) {
+    orderBy = /最低|最小|最少/.test(q) ? '销量 ASC' : '销量 DESC'
+    limit = topNNum
+    notes.push(`识别到排名需求 → ORDER BY 销量 ${orderBy.endsWith('ASC') ? '升序' : '降序'}，LIMIT ${limit}`)
+  } else if (/最高|最大|最多|冠军|最低|最小|最少/.test(q)) {
+    orderBy = /最高|最大|最多|冠军/.test(q) ? '销量 DESC' : '销量 ASC'
+    limit = 1
+    notes.push('识别到「最高/最低」→ ORDER BY 排序后 LIMIT 1')
+  }
+
+  // 组装 SQL
+  let cols
+  if (aggExpr && groupBy) cols = `${groupBy}, ${aggExpr} AS ${aggCol}`
+  else if (aggExpr) cols = `${aggExpr} AS ${aggCol}`
+  else cols = select.join(', ')
+  const lines = ['SELECT ' + cols, 'FROM sales']
+  if (where.length) lines.push('WHERE ' + where.join(' AND '))
+  if (groupBy) lines.push('GROUP BY ' + groupBy)
+  if (orderBy) lines.push('ORDER BY ' + orderBy)
+  if (limit) lines.push('LIMIT ' + limit)
+
+  const sql = lines.join('\n') + ';'
+  const explain = notes.length
+    ? notes.join('\n')
+    : '按问题语义直接选择列；未识别到筛选/聚合条件，先返回全表供确认。'
+  return `【生成的 SQL】\n\`\`\`sql\n${sql}\n\`\`\`\n\n【AI 思考过程】\n${explain}\n\n> 💡 教学提示：AI 是根据关键词猜的——表名/列名务必对照真实表结构核对，生成后先在测试环境跑一遍再使用。`
+}
+
+/** SQL 查询结果（管道/制表符/逗号分隔）→ Markdown 表格 */
+export function sqlToMarkdown(text) {
+  const lines = (text || '').trim().split(/\r?\n/).filter((l) => l.trim())
+  if (!lines.length) return '请先粘贴查询结果。'
+  const split = (l) => {
+    const s = l.trim().replace(/^\|/, '').replace(/\|$/, '')
+    if (s.includes('|')) return s.split('|').map((c) => c.trim())
+    if (s.includes('\t')) return s.split('\t').map((c) => c.trim())
+    return s.split(',').map((c) => c.trim())
+  }
+  const headers = split(lines[0])
+  const rows = lines.slice(1).map(split)
+  const sep = headers.map(() => '---').join(' | ')
+  const out = [`| ${headers.join(' | ')} |`, `| ${sep} |`]
+  rows.forEach((r) => out.push(`| ${r.map((c) => c || ' ').join(' | ')} |`))
+  return out.join('\n')
+}
+
+/** 解读查询结果 → Markdown 分析报告（数据先行、结论殿后） */
+export function aiInterpretResult(mdTable) {
+  const { headers, rows } = parseMdTable(mdTable)
+  if (!headers.length) return '没有识别到表格，请先用「结果转表格」把查询结果转成 Markdown 表格。'
+  const valCols = headers
+    .map((h, ci) => ({ h, ci }))
+    .filter(({ ci }) => rows.some((r) => toNum(r[ci]) !== null))
+  if (!valCols.length) return '表格中没有数值列，无法做统计分析。'
+  const parts = [`# 数据分析报告\n`, `## 一、数据概览\n`, `| ${headers.join(' | ')} |`, `| ${headers.map(() => '---').join(' | ')} |`]
+  rows.forEach((r) => parts.push(`| ${r.map((c) => c || ' ').join(' | ')} |`))
+  parts.push('', '## 二、主要发现')
+  const findings = []
+  const firstVal = valCols[0]
+  const nums = rows.map((r) => toNum(r[firstVal.ci])).filter((n) => n !== null)
+  const avg = nums.reduce((a, b) => a + b, 0) / nums.length
+  const sorted = rows
+    .map((r) => ({ label: r[0], val: toNum(r[firstVal.ci]) }))
+    .filter((x) => x.val !== null)
+    .sort((a, b) => b.val - a.val)
+  if (sorted.length) {
+    findings.push(`1. **${sorted[0].label} 领跑**：${firstVal.h} 达 ${fmt(sorted[0].val)}，高于均值 ${fmt(avg)}（依据：表格第 2 行起排序后首位）`)
+    if (sorted.length > 1) findings.push(`2. **${sorted[sorted.length - 1].label} 垫底**：${firstVal.h} 仅 ${fmt(sorted[sorted.length - 1].val)}，建议重点分析原因（依据：排序末位）`)
+    const outliers = sorted.filter((x) => Math.abs(x.val) > Math.abs(avg) * 3)
+    if (outliers.length) findings.push(`3. ⚠️ **疑似异常**：${outliers.map((o) => `${o.label}（${fmt(o.val)}）`).join('、')} 远超均值，请核对源数据（依据：超过均值 3 倍判定）`)
+  }
+  parts.push(...(findings.length ? findings : ['1. 数据整体平稳，未发现明显异常（依据：各值均在均值合理范围内）']))
+  parts.push('', '## 三、建议')
+  parts.push('- [ ] 对领跑门店复盘成功动作，形成可复制经验')
+  parts.push('- [ ] 对垫底门店做专项分析，制定改进计划')
+  parts.push('- [ ] 用图表（Mermaid）直观呈现趋势')
+  parts.push('', '> 💡 本报告由 AI 基于表格数据自动生成——结论都有「依据」可回溯，修改建议请结合业务实际判断。')
+  return parts.join('\n')
+}
+
+/** SQL 纠错练习题库：AI 常见的 4 类错误 */
+export const SQL_BUGS = [
+  {
+    title: '表名 / 列名拼写错误',
+    wrong: 'SELECT 门店, 销量 FROM sale\nWHERE 月份 = \'2025-06\';',
+    right: 'SELECT 门店, 销量 FROM sales\nWHERE 月份 = \'2025-06\';',
+    explain: '表名是 sales 不是 sale。AI 靠猜，表名列名必须对照真实表结构核对，这是第一守则。',
+  },
+  {
+    title: '聚合列缺少 GROUP BY',
+    wrong: 'SELECT 门店, MAX(销量)\nFROM sales\nWHERE 月份 = \'2025-06\';',
+    right: 'SELECT 门店, MAX(销量)\nFROM sales\nWHERE 月份 = \'2025-06\'\nGROUP BY 门店;',
+    explain: 'SELECT 同时出现普通列（门店）和聚合函数（MAX），必须按普通列 GROUP BY，否则报错或数据错乱。',
+  },
+  {
+    title: 'WHERE 与 HAVING 混用',
+    wrong: 'SELECT 门店\nFROM sales\nWHERE MAX(销量) > 1000;',
+    right: 'SELECT 门店\nFROM sales\nGROUP BY 门店\nHAVING MAX(销量) > 1000;',
+    explain: 'WHERE 只能过滤原始行，不能出现聚合函数；对「分组后的结果」做条件要用 HAVING。',
+  },
+  {
+    title: 'SQL 方言差异（MySQL vs SQL Server）',
+    wrong: 'SELECT TOP 3 门店, 销量 FROM sales;   -- 这是 SQL Server 写法',
+    right: 'SELECT 门店, 销量 FROM sales\nORDER BY 销量 DESC\nLIMIT 3;   -- MySQL 用 LIMIT',
+    explain: '不同数据库方言不同：MySQL 用 LIMIT，SQL Server 用 TOP。问 AI 前要先说明你用的数据库。',
+  },
+]
