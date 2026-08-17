@@ -21,6 +21,45 @@ const SAMPLE_TABLE = `# 2025 上半年各门店销售数据
 
 const Q_SAMPLES = ['哪家门店销量最高？', '销售额合计是多少？', '哪家门店销量最低？', '平均月度销量是多少？']
 
+/* Excel vs Markdown 逐项对比表 */
+const EXCEL_CMP = [
+  ['文件格式', '二进制（.xlsx 本质是 zip 包）', '纯文本，人人可读'],
+  ['AI 读取', '需解析器，合并单元格/公式易出错', '零解析损耗，直接读取'],
+  ['依据可核对', 'AI 读了哪些单元格很难验证', '每一行每一列一目了然，依据可核对'],
+  ['版本控制', '二进制无法 git diff', 'git diff 精确到每一处改动'],
+  ['团队协作', '并发编辑易冲突、锁文件', '文本可合并，冲突可读可解'],
+  ['与文档一体', '独立附件，文档与数据分离', '表格就是文档的一部分'],
+  ['适用场景', '复杂计算、图表透视、多人填报', '轻量数据 + 文档一体化 + 喂给 AI'],
+]
+
+/* 两种喂数据方式的模拟输出 */
+const EXCEL_SIM = `收到文件「销售数据.xlsx」（本地模拟）
+
+AI 处理过程：
+1. 解析二进制格式（.xlsx 实际是一个 zip 包）…
+2. 打开 3 个工作表，跳过 1 个空表…
+3. ⚠️ 检测到 2 处合并单元格，取值以左上角为准…
+4. ⚠️ 1 列是公式结果，部分单元格返回的是公式文本…
+
+读取完成，但存在解析损耗：你看不到 AI 到底读了哪些单元格，
+合并单元格和公式可能导致数据丢失或错位。
+
+对比右侧的 Markdown 表格方式：纯文本直接读取、零损耗、
+每行每列可见可核对、git diff 可追踪变化。`
+
+const MD_SIM = `收到 Markdown 表格（就是上方编辑器里的内容）
+
+AI 处理过程：
+1. 按 | 分隔符逐行读取表头与数据…
+2. 共识别 8 行数据、3 列（门店 / 月度销量 / 销售额(万元)）…
+3. 数值列直接可用于计算，无解析损耗…
+4. 所有单元格内容对 AI 和人类完全透明…
+
+读取完成，零损耗。任何一行都可以作为分析结论的「依据」直接引用，
+且这份表格本身就在文档里，跟着文档一起进 git 版本库。
+
+这正是「Markdown 表格 + AI」优于「Excel 上传」的核心原因。`
+
 export default function DataAnalyze() {
   const { done, markDone } = useLessonComplete('data-analyze')
   const [src, setSrc] = useState(SAMPLE_TABLE)
@@ -33,6 +72,29 @@ export default function DataAnalyze() {
   const [chartCode, setChartCode] = useState('')
   const [busy, setBusy] = useState(false)
   const [asked, setAsked] = useState(false)
+  const [excelMode, setExcelMode] = useState('')
+  const [simOut, setSimOut] = useState('')
+  const [simBusy, setSimBusy] = useState(false)
+
+  const simExcel = async () => {
+    if (simBusy) return
+    setSimBusy(true)
+    setExcelMode('excel')
+    setSimOut('')
+    await simulateStream(EXCEL_SIM, (c) => setSimOut(c), 10)
+    setSimBusy(false)
+    setAsked(true)
+  }
+
+  const simMarkdown = async () => {
+    if (simBusy) return
+    setSimBusy(true)
+    setExcelMode('md')
+    setSimOut('')
+    await simulateStream(MD_SIM, (c) => setSimOut(c), 10)
+    setSimBusy(false)
+    setAsked(true)
+  }
 
   const runStats = async () => {
     setBusy(true)
@@ -244,7 +306,67 @@ export default function DataAnalyze() {
         )}
       </Section>
 
-      <Section num={3} title="练习：完成任意一种分析">
+      <Section num={3} title="对比：直接把 Excel 上传给 AI 会怎样？">
+        <Callout type="info" title="先想一个问题">
+          很多人习惯把数据存在 Excel 里，然后直接把 <code>.xlsx</code> 文件丢给 AI。这样做能行，
+          但和「Markdown 表格」方式相比，代价是什么？下面用模拟演示对比给你看。
+        </Callout>
+
+        {/* 交互演示：两种喂数据方式 */}
+        <div className="card" style={{ padding: '16px 18px', marginTop: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+            <b>🎬 模拟演示：同一份数据，两种喂法</b>
+            <span style={{ fontSize: 12.5, color: 'var(--text-faint)' }}>点按钮看 AI 分别会经历什么</span>
+            <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+              <button className={`btn btn-sm ${excelMode === 'excel' ? 'btn-primary' : ''}`} onClick={simExcel} disabled={simBusy}>
+                📤 上传 Excel 给 AI
+              </button>
+              <button className={`btn btn-sm ${excelMode === 'md' ? 'btn-primary' : ''}`} onClick={simMarkdown} disabled={simBusy}>
+                📋 用 Markdown 表格
+              </button>
+            </div>
+          </div>
+          <pre
+            style={{
+              background: 'var(--code-bg)', color: 'var(--code-text)', borderRadius: 10,
+              padding: '12px 14px', fontSize: 13, lineHeight: 1.9, minHeight: 140, margin: 0, whiteSpace: 'pre-wrap',
+            }}
+          >
+            {simOut || '选择一种方式，看看 AI 读取这组数据的过程…'}
+          </pre>
+        </div>
+
+        {/* 静态对比表 */}
+        <div className="card" style={{ padding: '16px 18px', marginTop: 12 }}>
+          <b style={{ display: 'block', marginBottom: 10 }}>📊 两种方式逐项对比</b>
+          <div style={{ overflowX: 'auto' }}>
+            <table className="cmp-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5, minWidth: 560 }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: 'left', padding: '8px 10px', borderBottom: '2px solid var(--border)' }}>维度</th>
+                  <th style={{ textAlign: 'left', padding: '8px 10px', borderBottom: '2px solid var(--border)' }}>📤 Excel 直接上传</th>
+                  <th style={{ textAlign: 'left', padding: '8px 10px', borderBottom: '2px solid var(--border)' }}>📋 Markdown 表格 ✅</th>
+                </tr>
+              </thead>
+              <tbody>
+                {EXCEL_CMP.map((r) => (
+                  <tr key={r[0]}>
+                    <td style={{ padding: '7px 10px', borderBottom: '1px solid var(--border-soft, #eee)', fontWeight: 700, whiteSpace: 'nowrap' }}>{r[0]}</td>
+                    <td style={{ padding: '7px 10px', borderBottom: '1px solid var(--border-soft, #eee)', color: 'var(--text-soft)' }}>{r[1]}</td>
+                    <td style={{ padding: '7px 10px', borderBottom: '1px solid var(--border-soft, #eee)', color: 'var(--ok)' }}>{r[2]}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <Callout type="tip" style={{ marginTop: 12 }}>
+            <b>结论：</b>Markdown 表格是「<b>纯文本优先</b>」——AI 零解析损耗、依据可核对、可 diff、可进版本库；
+            Excel 是二进制格式，AI 读取要解析、易出错，且你很难验证 AI 到底读了什么。给 AI 喂数据，Markdown 是更优解。
+          </Callout>
+        </div>
+      </Section>
+
+      <Section num={4} title="练习：完成任意一种分析">
         <Exercise num={1} title="用 AI 完成一次表格分析（统计 / 问答 / 异常 / 图表任选其一）" done={done} doneLabel="数据分析师">
           <p style={{ marginTop: 0, fontSize: 13.5, color: 'var(--text-soft)' }}>
             操作提示：建议先用「统计摘要」看全貌，再用「异常检测」找问题（提示：看看武汉那行），

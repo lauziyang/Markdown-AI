@@ -554,22 +554,57 @@ export function aiSummary(md) {
   return `【摘要】${title}：${intro}。\n\n【要点】\n- ${bullets.join('\n- ') || '暂未提取到显著要点，建议补充标题与关键句。'}`
 }
 
-/** 翻译：中英互译（本地模拟，直译 vs 意译对比） */
-export function aiTranslate(text, dir = 'zh2en') {
-  const t = (text || '').trim()
-  if (!t) return ''
-  if (dir === 'zh2en') {
-    return `【直译】${t.replace(/([^。！？]+)[。！？]?/g, (m) => m.trim() + ' (translated) ').trim()}
-【意译】${t.length > 12 ? t.slice(0, 6) + '…（保留核心语义，润色表达，贴合英文习惯）' : t + '（英语）'}
+/** 语言风格分析：口语/正式程度、语气强度、句长分布与建议（本地模拟） */
+export function aiStyleAnalyze(md) {
+  const text = (md || '')
+    .replace(/```[\s\S]*?```/g, '')
+    .replace(/[#>*|`\-_]/g, '')
+    .trim()
+  if (!text) return null
+  const sentences = text.split(/[。！？!?；;\n]/).map((s) => s.trim()).filter(Boolean)
+  const n = Math.max(sentences.length, 1)
+  const avgLen = Math.round(text.length / n)
 
-> 💡 教学提示：真实 AI 翻译同样先「直译保真」再「意译润色」。任何翻译结果都必须人工校对——
-> 尤其涉及专业术语、数字、单位时，请务必核对原文。`
+  const ORAL = ['吧', '啊', '哦', '呢', '反正', '好像', '挺', '有点', '其实', '就是', '真的', '感觉', '哈', '嘛']
+  const FORMAL = ['鉴于', '兹', '依据', '现将', '特此', '综上', '予以', '务必', '敬请', '为贯彻', '现就', '根据', '特制定', '妥否', '呈报']
+  let oral = 0
+  let formal = 0
+  for (const w of ORAL) oral += (text.match(new RegExp(w, 'g')) || []).length
+  for (const w of FORMAL) formal += (text.match(new RegExp(w, 'g')) || []).length
+  const exclaim = (text.match(/[！!]/g) || []).length
+  const question = (text.match(/[？?]/g) || []).length
+
+  const short = sentences.filter((s) => s.length < 15).length
+  const mid = sentences.filter((s) => s.length >= 15 && s.length < 40).length
+  const long = sentences.filter((s) => s.length >= 40).length
+
+  let tone = '中性、客观'
+  if (formal >= 2) tone = '正式、公文风'
+  else if (oral >= 2 && exclaim > 0) tone = '口语化、情绪饱满'
+  else if (oral > formal) tone = '偏口语化、亲切'
+  else if (formal > oral) tone = '偏正式、书面'
+
+  let style = '说明/叙事风格'
+  const shortRatio = short / n
+  if (shortRatio > 0.6 && avgLen < 14) style = '口语化短句风格'
+  else if (formal >= 2 && avgLen > 20) style = '正式书面风格'
+  else if (avgLen >= 24) style = '长句密集的书面风格'
+
+  const suggestions = []
+  if (oral >= 2) suggestions.push(`出现 ${oral} 处口语词（如「反正、其实、有点」），正式场合建议替换为书面语`)
+  if (exclaim >= 2) suggestions.push(`有 ${exclaim} 个感叹号，语气偏强；公文 / 报告类文档建议克制使用`)
+  if (long >= 2) suggestions.push(`有 ${long} 个超过 40 字的超长句，建议拆分，单句控制在 30 字内更易读`)
+  if (shortRatio > 0.6) suggestions.push('短句过多显得零碎，可适当合并，让行文更连贯')
+  if (!suggestions.length) suggestions.push('语言风格均衡，正式度与可读性搭配良好')
+
+  return {
+    style,
+    tone,
+    avgLen,
+    counts: { oral, formal, exclaim, question },
+    dist: { short, mid, long, total: n },
+    suggestions,
   }
-  return `【直译】${t}
-【意译】${t.length > 12 ? '（口语化改写，强调可读性）' : ''}
-
-> 💡 教学提示：这是本地模拟的翻译效果。接入真实大模型后，这里会返回真正的译文；
-> 无论用哪种工具，关键内容都建议人工复核。`
 }
 
 /** 多轮对话续写：根据用户的修改反馈继续优化（模拟） */
