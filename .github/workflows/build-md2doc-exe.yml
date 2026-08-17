@@ -21,6 +21,10 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+# 声明 GITHUB_TOKEN 的权限：创建/更新 Release 需要 contents 写权限
+permissions:
+  contents: write
+
 jobs:
   build-windows:
     name: 构建 Windows x64 exe
